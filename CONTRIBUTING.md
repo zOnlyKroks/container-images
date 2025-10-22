@@ -10,8 +10,6 @@ images/
 │   ├── config.yaml          # Required: Image configuration
 │   ├── Dockerfile           # Optional: Custom Dockerfile
 │   ├── setup.sh            # Optional: Setup script for auto-generated Dockerfile
-│   └── patches/            # Optional: Patches to apply
-│       └── *.patch
 ```
 
 ## Configuration File (config.yaml)
@@ -76,17 +74,6 @@ RUN apt-get update && \
 EXPOSE 8080
 CMD ["myapp"]
 ```
-
-## Applying Patches
-
-Place `.patch` files in `images/my-app/patches/`:
-
-```bash
-# Create a patch
-diff -Naur /original/file /modified/file > images/my-app/patches/001-fix-config.patch
-```
-
-Patches are applied automatically during build.
 
 ## Versioning
 
@@ -170,17 +157,18 @@ This will check all images for newer versions and provide update commands.
 
 ### Automated Updates
 
-The repository uses two systems for dependency updates:
+The repository uses three systems for dependency updates:
 
-1. **GitHub Actions Workflow** (`.github/workflows/update-dependencies.yaml`)
-   - Runs daily at 6 AM UTC
-   - Checks for new MinIO releases
+1. **Version Check Workflow** (`.github/workflows/check-versions.yaml`)
+   - Runs weekly (Monday at 6 AM UTC)
+   - Checks for new releases for images with `check-version.sh`
    - Creates PRs automatically
+   - **Matrix auto-sync**: When you add a new image with `check-version.sh`, the workflow matrix is automatically updated
 
-2. **Renovate Bot** (`renovate.json`)
-   - Monitors Dockerfile base images
-   - Updates GitHub Actions versions
-   - Auto-merges minor/patch updates
+2. **Matrix Sync Workflow** (`.github/workflows/sync-version-checks.yaml`)
+   - Runs when a new `check-version.sh` is added to any image
+   - Automatically updates the version check matrix
+   - No manual configuration needed - just add your `check-version.sh` file!
 
 ### Manual Updates
 
