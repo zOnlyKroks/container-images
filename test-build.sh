@@ -40,6 +40,7 @@ OPTIONS:
     --no-cache             Build without cache
     --push                 Push to registry after successful build
     --load                 Load image to docker (single platform only)
+    --smoke-test           Run smoke test after successful build
 
 EXAMPLES:
     # Build for current platform
@@ -57,6 +58,9 @@ EXAMPLES:
     # Build and load to local docker
     $0 --load minio
 
+    # Build and run smoke test
+    $0 --smoke-test minio
+
 EOF
     exit 0
 }
@@ -72,6 +76,7 @@ TAG="test"
 NO_CACHE=""
 PUSH=""
 LOAD="--load"
+RUN_SMOKE_TEST=false
 IMAGE_NAME=""
 
 # Parse arguments
@@ -99,6 +104,10 @@ while [[ $# -gt 0 ]]; do
             ;;
         --load)
             LOAD="--load"
+            shift
+            ;;
+        --smoke-test)
+            RUN_SMOKE_TEST=true
             shift
             ;;
         -*)
@@ -287,6 +296,32 @@ fi
 if [ "$DOCKERFILE" = "$IMAGE_DIR/Dockerfile.generated" ]; then
     rm -f "$DOCKERFILE"
     print_info "Cleaned up generated Dockerfile"
+fi
+
+# Run smoke test if requested
+if [ "$RUN_SMOKE_TEST" = true ]; then
+    echo ""
+    print_info "Running smoke test..."
+
+    SMOKE_TEST_SCRIPT="$IMAGE_DIR/smoke-test.sh"
+
+    if [ ! -f "$SMOKE_TEST_SCRIPT" ]; then
+        print_warning "No smoke test found for $IMAGE_NAME (expected: $SMOKE_TEST_SCRIPT)"
+        print_info "Skipping smoke test"
+    else
+        if [ -z "$LOAD" ]; then
+            print_warning "Cannot run smoke test: image not loaded locally (multi-platform or --push used)"
+            print_info "Use single platform with --load to run smoke tests"
+        else
+            chmod +x "$SMOKE_TEST_SCRIPT"
+            if bash "$SMOKE_TEST_SCRIPT" "$IMAGE_TAG"; then
+                print_success "Smoke test passed!"
+            else
+                print_error "Smoke test failed!"
+                exit 1
+            fi
+        fi
+    fi
 fi
 
 print_success "Test build complete!"

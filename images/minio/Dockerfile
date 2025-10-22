@@ -75,5 +75,10 @@ EXPOSE 9000 9001
 
 VOLUME ["/data"]
 
+# Health check - verify MinIO is responding
+# Check every 30s, timeout 10s, start checking after 5s, 3 retries before unhealthy
+HEALTHCHECK --interval=30s --timeout=10s --start-period=5s --retries=3 \
+    CMD ["/usr/bin/mc", "ready", "local", "--quiet"] || exit 1
+
 ENTRYPOINT ["/usr/bin/docker-entrypoint.sh"]
 CMD ["minio", "server", "/data", "--console-address", ":9001"]
