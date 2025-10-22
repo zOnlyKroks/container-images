@@ -66,10 +66,13 @@ jobs:
         id: set-matrix
         run: |
           IMAGES="${{ steps.changed-images.outputs.images }}"
+          HAS_IMAGES="false"
+
           if [ -z "$IMAGES" ] || [ "$IMAGES" = " " ]; then
             # No images to build - create empty matrix with dummy entry
             # The build job will be skipped via the 'if' condition
             echo "matrix={\"include\":[{\"image\":\"none\"}]}" >> $GITHUB_OUTPUT
+            echo "has_images=false" >> $GITHUB_OUTPUT
             echo "No images to build"
           else
             JSON_ARRAY="["
@@ -83,18 +86,21 @@ jobs:
 
             if [ "$FOUND_VALID_IMAGE" = "true" ]; then
               JSON_ARRAY="${JSON_ARRAY%,}]"
+              HAS_IMAGES="true"
             else
               # No valid images found - create dummy entry
               JSON_ARRAY="[{\"image\":\"none\"}]"
+              HAS_IMAGES="false"
             fi
 
             echo "matrix={\"include\":$JSON_ARRAY}" >> $GITHUB_OUTPUT
+            echo "has_images=$HAS_IMAGES" >> $GITHUB_OUTPUT
             echo "Matrix: $JSON_ARRAY"
           fi
 
   build-and-publish:
     needs: detect-changes
-    if: needs.detect-changes.outputs.images != ''
+    if: needs.detect-changes.outputs.matrix != '' && fromJson(needs.detect-changes.outputs.matrix).include[0].image != 'none'
     runs-on: ubuntu-latest
     permissions:
       contents: read
