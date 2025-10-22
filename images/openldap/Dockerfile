@@ -1,4 +1,4 @@
-FROM registry.access.redhat.com/ubi9/ubi-minimal:latest
+FROM alpine:3.21
 
 ARG OPENLDAP_VERSION=2.6.10
 
@@ -7,19 +7,20 @@ LABEL org.opencontainers.image.description="OpenLDAP - Open Source LDAP Director
 LABEL org.opencontainers.image.version="${OPENLDAP_VERSION}"
 LABEL org.opencontainers.image.licenses="OpenLDAP Public License"
 
-# Install dependencies
-RUN microdnf install -y \
+# Install OpenLDAP and dependencies
+RUN apk add --no-cache \
     openldap \
-    openldap-servers \
+    openldap-back-mdb \
     openldap-clients \
+    openldap-overlay-all \
     cyrus-sasl \
-    cyrus-sasl-md5 \
     cyrus-sasl-plain \
-    && microdnf clean all
+    cyrus-sasl-digestmd5 \
+    && rm -rf /var/cache/apk/*
 
 # Create necessary directories
-RUN mkdir -p /var/lib/ldap /etc/openldap/slapd.d /run/openldap \
-    && chown -R ldap:ldap /var/lib/ldap /etc/openldap/slapd.d /run/openldap
+RUN mkdir -p /var/lib/openldap /etc/openldap/slapd.d /run/openldap \
+    && chown -R ldap:ldap /var/lib/openldap /etc/openldap/slapd.d /run/openldap
 
 # Expose LDAP and LDAPS ports
 EXPOSE 389 636

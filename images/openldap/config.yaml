@@ -1,4 +1,4 @@
-base_image: "registry.access.redhat.com/ubi9/ubi-minimal:latest"
+base_image: "alpine:3.21"
 version: "2.6.10"
 description: "OpenLDAP - Open Source LDAP Directory Server"
 
