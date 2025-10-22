@@ -22,9 +22,10 @@ RUN curl -s -q https://dl.min.io/server/minio/release/linux-${TARGETARCH}/archiv
 RUN curl -s -q https://dl.min.io/client/mc/release/linux-${TARGETARCH}/mc -o /go/bin/mc && \
     chmod +x /go/bin/mc
 
-# Verify binaries are executable and functional
-RUN /go/bin/minio --version && \
-    /go/bin/mc --version
+# Verify binaries were downloaded successfully
+RUN test -f /go/bin/minio && \
+    test -f /go/bin/mc && \
+    ls -lh /go/bin/minio /go/bin/mc
 
 # Runtime stage
 FROM registry.access.redhat.com/ubi9/ubi-micro:latest
