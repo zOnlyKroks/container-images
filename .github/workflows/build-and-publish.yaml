@@ -114,10 +114,10 @@ jobs:
         uses: actions/checkout@08c6903cd8c0fde910a37f88322edcfb5dd907a8 # v5.0.0
 
       - name: Set up QEMU
-        uses: docker/setup-qemu-action@49b3bc8e6bdd4a60e6116a5414239cba5943d3cf # v3.2.0
+        uses: docker/setup-qemu-action@29109295f81e9208d7d86ff1c6c12d2833863392 # v3.6.0
 
       - name: Set up Docker Buildx
-        uses: docker/setup-buildx-action@c47758b77c9736f4b2ef4073d4d51994fabfe349 # v3.7.1
+        uses: docker/setup-buildx-action@e468171a9de216ec08956ac3ada2f0791b6bd435 # v3.11.1
 
       - name: Check credentials availability
         id: check-creds
@@ -298,7 +298,7 @@ jobs:
           cat "$DOCKERFILE"
 
       - name: Build and push
-        uses: docker/build-push-action@ca052bb54ab0790a636c9b5f226502c73d547a25 # v5.4.0
+        uses: docker/build-push-action@263435318d21b8e681c14492fe198d362a7d2c83 # v6.18.0
         with:
           context: images/${{ matrix.image }}
           file: images/${{ matrix.image }}/Dockerfile.generated
@@ -317,7 +317,7 @@ jobs:
 
       - name: Install cosign
         if: github.event_name != 'pull_request' && github.event.inputs.dry_run != 'true' && steps.check-creds.outputs.cosign == 'true'
-        uses: sigstore/cosign-installer@v3.10.0
+        uses: sigstore/cosign-installer@faadad0cce49287aee09b3a48701e75088a2c6ad # v4.0.0
 
       - name: Sign images
         if: github.event_name != 'pull_request' && github.event.inputs.dry_run != 'true' && steps.check-creds.outputs.cosign == 'true'

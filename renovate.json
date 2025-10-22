@@ -3,10 +3,14 @@
   "extends": [
     "config:recommended"
   ],
-  "labels": ["dependencies"],
+  "labels": [
+    "dependencies"
+  ],
   "commitMessagePrefix": "chore:",
   "semanticCommits": "enabled",
-  "schedule": ["before 6am every weekday"],
+  "schedule": [
+    "before 6am every weekday"
+  ],
   "timezone": "UTC",
   "prConcurrentLimit": 5,
   "prHourlyLimit": 2,
@@ -14,29 +18,40 @@
   "packageRules": [
     {
       "description": "Dockerfile base images",
-      "matchDatasources": ["docker"],
-      "matchFileNames": ["images/**/Dockerfile"],
+      "matchDatasources": [
+        "docker"
+      ],
+      "matchFileNames": [
+        "images/**/Dockerfile"
+      ],
       "enabled": true,
       "separateMinorPatch": false,
       "groupName": "Docker base images"
     },
     {
       "description": "GitHub Actions",
-      "matchManagers": ["github-actions"],
+      "matchManagers": [
+        "github-actions"
+      ],
       "automerge": true,
       "automergeType": "pr",
       "groupName": "GitHub Actions"
     },
     {
       "description": "Pin GitHub Actions digests",
-      "matchManagers": ["github-actions"],
+      "matchManagers": [
+        "github-actions"
+      ],
       "pinDigests": true
     }
   ],
   "regexManagers": [
     {
+      "customType": "regex",
       "description": "Update MinIO RELEASE in Dockerfile",
-      "fileMatch": ["^images/minio/Dockerfile$"],
+      "managerFilePatterns": [
+        "/^images/minio/Dockerfile$/"
+      ],
       "matchStrings": [
         "ARG RELEASE=(?<currentValue>RELEASE\\.[0-9T\\-Z]+)"
       ],
