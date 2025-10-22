@@ -43,16 +43,6 @@
         "github-actions"
       ],
       "pinDigests": true
-    },
-    {
-      "description": "Use loose versioning for MinIO",
-      "matchDatasources": [
-        "github-releases"
-      ],
-      "matchPackageNames": [
-        "minio/minio"
-      ],
-      "versioning": "loose"
     }
   ],
   "customManagers": [
@@ -65,8 +55,9 @@
       "matchStrings": [
         "ARG RELEASE=(?<currentValue>RELEASE\\.[^\\s]+)"
       ],
-      "datasourceTemplate": "github-releases",
-      "depNameTemplate": "minio/minio"
+      "datasourceTemplate": "github-tags",
+      "depNameTemplate": "minio/minio",
+      "versioningTemplate": "loose"
     }
   ]
 }
