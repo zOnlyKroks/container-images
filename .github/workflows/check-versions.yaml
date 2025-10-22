@@ -10,12 +10,29 @@ permissions:
   pull-requests: write
 
 jobs:
-  check-updates:
+  discover-images:
     runs-on: ubuntu-latest
+    outputs:
+      matrix: ${{ steps.set-matrix.outputs.matrix }}
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v5
+
+      - name: Discover images with check-version.sh
+        id: set-matrix
+        run: |
+          # Find all directories under images/ that contain check-version.sh
+          images=$(find images -mindepth 2 -maxdepth 2 -name "check-version.sh" -exec dirname {} \; | xargs -I {} basename {} | jq -R -s -c 'split("\n")[:-1]')
+          echo "matrix=$images" >> $GITHUB_OUTPUT
+          echo "Found images: $images"
+
+  check-updates:
+    needs: discover-images
+    runs-on: ubuntu-latest
+    if: needs.discover-images.outputs.matrix != '[]'
     strategy:
       matrix:
-        image:
-          - minio
+        image: ${{ fromJson(needs.discover-images.outputs.matrix) }}
       fail-fast: false
 
     steps:

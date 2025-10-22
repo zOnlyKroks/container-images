@@ -157,18 +157,13 @@ This will check all images for newer versions and provide update commands.
 
 ### Automated Updates
 
-The repository uses three systems for dependency updates:
+The repository uses automated version checking:
 
-1. **Version Check Workflow** (`.github/workflows/check-versions.yaml`)
-   - Runs weekly (Monday at 6 AM UTC)
-   - Checks for new releases for images with `check-version.sh`
-   - Creates PRs automatically
-   - **Matrix auto-sync**: When you add a new image with `check-version.sh`, the workflow matrix is automatically updated
-
-2. **Matrix Sync Workflow** (`.github/workflows/sync-version-checks.yaml`)
-   - Runs when a new `check-version.sh` is added to any image
-   - Automatically updates the version check matrix
-   - No manual configuration needed - just add your `check-version.sh` file!
+**Version Check Workflow** (`.github/workflows/check-versions.yaml`)
+- Runs weekly (Monday at 6 AM UTC)
+- **Automatically discovers** all images with `check-version.sh`
+- Checks for new releases and creates PRs automatically
+- No manual configuration needed - just add your `check-version.sh` file!
 
 ### Manual Updates
 
