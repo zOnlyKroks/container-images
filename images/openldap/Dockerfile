@@ -1,6 +1,6 @@
 FROM alpine:3.21
 
-ARG OPENLDAP_VERSION=2.6.9
+ARG OPENLDAP_VERSION=2.6.10
 
 LABEL org.opencontainers.image.source="https://github.com/CloudPirates-io/container-images"
 LABEL org.opencontainers.image.description="OpenLDAP - Open Source LDAP Directory Server"
