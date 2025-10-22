@@ -101,8 +101,33 @@ jobs:
       - name: Set up Docker Buildx
         uses: docker/setup-buildx-action@c47758b77c9736f4b2ef4073d4d51994fabfe349 # v3.7.1
 
+      - name: Check credentials availability
+        id: check-creds
+        run: |
+          set -euo pipefail
+
+          HAS_DOCKERHUB_CREDS="false"
+          HAS_COSIGN_CREDS="false"
+
+          if [ -n "${{ secrets.DOCKERHUB_USERNAME }}" ] && [ -n "${{ secrets.DOCKERHUB_TOKEN }}" ]; then
+            HAS_DOCKERHUB_CREDS="true"
+            echo "Docker Hub credentials available"
+          else
+            echo "Docker Hub credentials not available - publishing will be skipped"
+          fi
+
+          if [ -n "${{ secrets.COSIGN_KEY }}" ] && [ -n "${{ secrets.COSIGN_PASSWORD }}" ]; then
+            HAS_COSIGN_CREDS="true"
+            echo "Cosign credentials available"
+          else
+            echo "Cosign credentials not available - image signing will be skipped"
+          fi
+
+          echo "dockerhub=$HAS_DOCKERHUB_CREDS" >> $GITHUB_OUTPUT
+          echo "cosign=$HAS_COSIGN_CREDS" >> $GITHUB_OUTPUT
+
       - name: Login to Docker Hub
-        if: github.event_name != 'pull_request' && github.event.inputs.dry_run != 'true'
+        if: github.event_name != 'pull_request' && github.event.inputs.dry_run != 'true' && steps.check-creds.outputs.dockerhub == 'true'
         uses: docker/login-action@5e57cd118135c172c3672efd75eb46360885c0ef # v3.6.0
         with:
           username: ${{ secrets.DOCKERHUB_USERNAME }}
@@ -144,13 +169,23 @@ jobs:
           # Get GitHub repo owner in lowercase
           REPO_OWNER=$(echo "${{ github.repository_owner }}" | tr '[:upper:]' '[:lower:]')
 
-          # Build tags
+          # Build tags based on available credentials
           TAGS=""
           if [ "${{ github.event_name }}" != "pull_request" ]; then
-            TAGS="cloudpirates/$IMAGE_NAME:$VERSION"
-            TAGS="$TAGS,cloudpirates/$IMAGE_NAME:latest"
-            TAGS="$TAGS,ghcr.io/$REPO_OWNER/container-images/$IMAGE_NAME:$VERSION"
-            TAGS="$TAGS,ghcr.io/$REPO_OWNER/container-images/$IMAGE_NAME:latest"
+            # Add Docker Hub tags only if credentials are available
+            if [ "${{ steps.check-creds.outputs.dockerhub }}" = "true" ]; then
+              TAGS="cloudpirates/$IMAGE_NAME:$VERSION"
+              TAGS="$TAGS,cloudpirates/$IMAGE_NAME:latest"
+            fi
+
+            # Add GHCR tags (always available via GITHUB_TOKEN)
+            if [ -n "$TAGS" ]; then
+              TAGS="$TAGS,ghcr.io/$REPO_OWNER/container-images/$IMAGE_NAME:$VERSION"
+              TAGS="$TAGS,ghcr.io/$REPO_OWNER/container-images/$IMAGE_NAME:latest"
+            else
+              TAGS="ghcr.io/$REPO_OWNER/container-images/$IMAGE_NAME:$VERSION"
+              TAGS="$TAGS,ghcr.io/$REPO_OWNER/container-images/$IMAGE_NAME:latest"
+            fi
           else
             TAGS="cloudpirates/$IMAGE_NAME:pr-${{ github.event.pull_request.number }}"
           fi
@@ -247,6 +282,7 @@ jobs:
           context: images/${{ matrix.image }}
           file: images/${{ matrix.image }}/Dockerfile.generated
           platforms: ${{ steps.config.outputs.platforms }}
+          # Push only if not PR, not dry run, and we have credentials (GITHUB_TOKEN is always available for GHCR)
           push: ${{ github.event_name != 'pull_request' && github.event.inputs.dry_run != 'true' }}
           tags: ${{ steps.config.outputs.tags }}
           cache-from: type=gha
@@ -255,13 +291,15 @@ jobs:
             org.opencontainers.image.source=${{ github.event.repository.html_url }}
             org.opencontainers.image.created=${{ github.event.head_commit.timestamp }}
             org.opencontainers.image.revision=${{ github.sha }}
+          # Ignore push failures for Docker Hub if credentials are missing
+          # Docker will push to available registries only
 
       - name: Install cosign
-        if: github.event_name != 'pull_request' && github.event.inputs.dry_run != 'true'
+        if: github.event_name != 'pull_request' && github.event.inputs.dry_run != 'true' && steps.check-creds.outputs.cosign == 'true'
         uses: sigstore/cosign-installer@v3.10.0
 
       - name: Sign images
-        if: github.event_name != 'pull_request' && github.event.inputs.dry_run != 'true'
+        if: github.event_name != 'pull_request' && github.event.inputs.dry_run != 'true' && steps.check-creds.outputs.cosign == 'true'
         env:
           COSIGN_KEY: ${{ secrets.COSIGN_KEY }}
           COSIGN_PASSWORD: ${{ secrets.COSIGN_PASSWORD }}
@@ -272,11 +310,15 @@ jobs:
           VERSION="${{ steps.config.outputs.version }}"
           REPO_OWNER=$(echo "${{ github.repository_owner }}" | tr '[:upper:]' '[:lower:]')
 
-          # Sign Docker Hub image
-          cosign sign -y --key env://COSIGN_KEY \
-            cloudpirates/$IMAGE_NAME:$VERSION
+          # Sign Docker Hub image only if credentials are available
+          if [ "${{ steps.check-creds.outputs.dockerhub }}" = "true" ]; then
+            echo "Signing Docker Hub image..."
+            cosign sign -y --key env://COSIGN_KEY \
+              cloudpirates/$IMAGE_NAME:$VERSION
+          fi
 
           # Sign GHCR image
+          echo "Signing GHCR image..."
           cosign sign -y --key env://COSIGN_KEY \
             ghcr.io/$REPO_OWNER/container-images/$IMAGE_NAME:$VERSION
 
@@ -287,13 +329,35 @@ jobs:
         run: |
           echo "## Container Image Built" >> $GITHUB_STEP_SUMMARY
           echo "" >> $GITHUB_STEP_SUMMARY
-          echo "Successfully built and published **${{ matrix.image }}:${{ steps.config.outputs.version }}**" >> $GITHUB_STEP_SUMMARY
+          echo "Successfully built **${{ matrix.image }}:${{ steps.config.outputs.version }}**" >> $GITHUB_STEP_SUMMARY
           echo "" >> $GITHUB_STEP_SUMMARY
+
+          # Show publishing status
+          if [ "${{ steps.check-creds.outputs.dockerhub }}" = "true" ]; then
+            echo "✅ Published to Docker Hub" >> $GITHUB_STEP_SUMMARY
+          else
+            echo "⚠️  Docker Hub credentials not available - publishing to Docker Hub skipped" >> $GITHUB_STEP_SUMMARY
+          fi
+          echo "✅ Published to GHCR" >> $GITHUB_STEP_SUMMARY
+          echo "" >> $GITHUB_STEP_SUMMARY
+
+          # Show signing status
+          if [ "${{ steps.check-creds.outputs.cosign }}" = "true" ]; then
+            echo "✅ Images signed with Cosign" >> $GITHUB_STEP_SUMMARY
+          else
+            echo "⚠️  Cosign credentials not available - image signing skipped" >> $GITHUB_STEP_SUMMARY
+          fi
+          echo "" >> $GITHUB_STEP_SUMMARY
+
           echo "### Pull Commands" >> $GITHUB_STEP_SUMMARY
           echo "\`\`\`bash" >> $GITHUB_STEP_SUMMARY
-          echo "# From Docker Hub" >> $GITHUB_STEP_SUMMARY
-          echo "docker pull cloudpirates/${{ matrix.image }}:${{ steps.config.outputs.version }}" >> $GITHUB_STEP_SUMMARY
-          echo "" >> $GITHUB_STEP_SUMMARY
+
+          if [ "${{ steps.check-creds.outputs.dockerhub }}" = "true" ]; then
+            echo "# From Docker Hub" >> $GITHUB_STEP_SUMMARY
+            echo "docker pull cloudpirates/${{ matrix.image }}:${{ steps.config.outputs.version }}" >> $GITHUB_STEP_SUMMARY
+            echo "" >> $GITHUB_STEP_SUMMARY
+          fi
+
           echo "# From GHCR" >> $GITHUB_STEP_SUMMARY
           REPO_OWNER=$(echo "${{ github.repository_owner }}" | tr '[:upper:]' '[:lower:]')
           echo "docker pull ghcr.io/$REPO_OWNER/container-images/${{ matrix.image }}:${{ steps.config.outputs.version }}" >> $GITHUB_STEP_SUMMARY
