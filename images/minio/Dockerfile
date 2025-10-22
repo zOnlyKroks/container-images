@@ -1,4 +1,4 @@
-ARG RELEASE=RELEASE.2025-10-15T17-29-55Z
+ARG RELEASE=RELEASE.2024-10-13T13-34-11Z
 
 # Build stage - download and verify binaries
 FROM golang:1.25-alpine AS build
