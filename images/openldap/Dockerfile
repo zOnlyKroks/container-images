@@ -14,8 +14,9 @@ RUN apk add --no-cache \
     openldap-clients \
     openldap-overlay-all \
     cyrus-sasl \
-    cyrus-sasl-plain \
+    cyrus-sasl-login \
     cyrus-sasl-digestmd5 \
+    cyrus-sasl-crammd5 \
     && rm -rf /var/cache/apk/*
 
 # Create necessary directories
