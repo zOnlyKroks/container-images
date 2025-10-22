@@ -321,7 +321,7 @@ jobs:
           # Docker will push to available registries only
 
       - name: Run Trivy vulnerability scanner
-        uses: aquasecurity/trivy-action@18f2510ee396bbf400402c7deaa6b9267b6c457a # v0.31.0
+        uses: aquasecurity/trivy-action@b6643a29fecd7f34b3597bc6acb0a98b03d33ff8 # v0.33.1
         with:
           image-ref: ghcr.io/${{ github.repository_owner }}/container-images/${{ matrix.image }}:${{ steps.config.outputs.version }}
           format: 'sarif'
@@ -337,7 +337,7 @@ jobs:
         continue-on-error: true
 
       - name: Run Trivy for summary
-        uses: aquasecurity/trivy-action@18f2510ee396bbf400402c7deaa6b9267b6c457a # v0.31.0
+        uses: aquasecurity/trivy-action@b6643a29fecd7f34b3597bc6acb0a98b03d33ff8 # v0.33.1
         with:
           image-ref: ghcr.io/${{ github.repository_owner }}/container-images/${{ matrix.image }}:${{ steps.config.outputs.version }}
           format: 'table'
