@@ -12,8 +12,7 @@ ENV CGO_ENABLED=0
 WORKDIR /build
 
 # Install verification tools
-# Note: minisign is in Alpine's community repo
-RUN apk add -U --no-cache ca-certificates curl bash minisign
+RUN apk add -U --no-cache ca-certificates curl bash
 
 # Download MinIO binary and verification files
 RUN curl -s -q https://dl.min.io/server/minio/release/linux-${TARGETARCH}/archive/minio.${RELEASE} -o /go/bin/minio && \
@@ -27,9 +26,10 @@ RUN curl -s -q https://dl.min.io/client/mc/release/linux-${TARGETARCH}/mc -o /go
     curl -s -q https://dl.min.io/client/mc/release/linux-${TARGETARCH}/mc.sha256sum -o /go/bin/mc.sha256sum && \
     chmod +x /go/bin/mc
 
-# Verify binaries with minisign
-RUN minisign -Vqm /go/bin/minio -x /go/bin/minio.minisig -P RWTx5Zr1tiHQLwG9keckT0c45M3AGeHD6IvimQHpyRywVWGbP1aVSGav && \
-    minisign -Vqm /go/bin/mc -x /go/bin/mc.minisig -P RWTx5Zr1tiHQLwG9keckT0c45M3AGeHD6IvimQHpyRywVWGbP1aVSGav
+# Verify binaries with SHA256 checksums
+RUN cd /go/bin && \
+    sha256sum -c minio.sha256sum && \
+    sha256sum -c mc.sha256sum
 
 # Runtime stage
 FROM registry.access.redhat.com/ubi9/ubi-micro:latest
