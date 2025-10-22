@@ -56,7 +56,8 @@
         "ARG RELEASE=(?<currentValue>RELEASE\\.[0-9T\\-Z]+)"
       ],
       "datasourceTemplate": "github-releases",
-      "depNameTemplate": "minio/minio"
+      "depNameTemplate": "minio/minio",
+      "versioningTemplate": "loose"
     }
   ]
 }
