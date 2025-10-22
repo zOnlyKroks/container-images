@@ -53,11 +53,11 @@
         "(^|/)images/minio/Dockerfile$"
       ],
       "matchStrings": [
-        "ARG RELEASE=(?<currentValue>RELEASE\\.[0-9T\\-Z]+)"
+        "ARG RELEASE=(?<currentValue>RELEASE\\.[^\\s]+)"
       ],
       "datasourceTemplate": "github-releases",
       "depNameTemplate": "minio/minio",
-      "versioningTemplate": "loose"
+      "extractVersionTemplate": "^(?<version>.*)$"
     }
   ]
 }
