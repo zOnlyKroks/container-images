@@ -57,7 +57,8 @@
       ],
       "datasourceTemplate": "github-releases",
       "depNameTemplate": "minio/minio",
-      "extractVersionTemplate": "^(?<version>.*)$"
+      "extractVersionTemplate": "^(?<version>.*)$",
+      "versioningTemplate": "loose"
     }
   ]
 }
