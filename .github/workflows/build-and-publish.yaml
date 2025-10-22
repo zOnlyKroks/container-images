@@ -321,6 +321,7 @@ jobs:
           # Docker will push to available registries only
 
       - name: Run Trivy vulnerability scanner
+        if: github.event_name != 'pull_request'
         uses: aquasecurity/trivy-action@b6643a29fecd7f34b3597bc6acb0a98b03d33ff8 # v0.33.1
         with:
           image-ref: ghcr.io/${{ github.repository_owner }}/container-images/${{ matrix.image }}:${{ steps.config.outputs.version }}
@@ -330,18 +331,30 @@ jobs:
         continue-on-error: true
 
       - name: Upload Trivy results to GitHub Security
+        if: github.event_name != 'pull_request'
         uses: github/codeql-action/upload-sarif@f09c1c0a94de965c15400f5634aa42fac8fb8f88 # v3.28.5
-        if: always()
         with:
           sarif_file: 'trivy-results.sarif'
         continue-on-error: true
 
       - name: Run Trivy for summary
+        if: github.event_name != 'pull_request'
         uses: aquasecurity/trivy-action@b6643a29fecd7f34b3597bc6acb0a98b03d33ff8 # v0.33.1
         with:
           image-ref: ghcr.io/${{ github.repository_owner }}/container-images/${{ matrix.image }}:${{ steps.config.outputs.version }}
           format: 'table'
           severity: 'CRITICAL,HIGH,MEDIUM'
+        continue-on-error: true
+
+      - name: Run Trivy on PR (scan Dockerfile)
+        if: github.event_name == 'pull_request'
+        uses: aquasecurity/trivy-action@b6643a29fecd7f34b3597bc6acb0a98b03d33ff8 # v0.33.1
+        with:
+          scan-type: 'config'
+          scan-ref: 'images/${{ matrix.image }}'
+          format: 'table'
+          severity: 'CRITICAL,HIGH,MEDIUM'
+          exit-code: '0'
         continue-on-error: true
 
       - name: Load image for smoke test

@@ -25,7 +25,7 @@ docker run -d \
     -e MINIO_ROOT_PASSWORD=minioadmin123 \
     -p 9000:9000 \
     -p 9001:9001 \
-    "$IMAGE_TAG" server /data --console-address ":9001"
+    "$IMAGE_TAG"
 
 # Wait for MinIO to be ready
 echo "Waiting for MinIO to start..."
