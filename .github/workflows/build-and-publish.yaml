@@ -1,0 +1,300 @@
+name: Build and Publish Container Images
+
+on:
+  push:
+    branches:
+      - main
+    paths:
+      - 'images/**'
+      - '.github/workflows/build-and-publish.yaml'
+  pull_request:
+    branches:
+      - main
+    paths:
+      - 'images/**'
+      - '.github/workflows/build-and-publish.yaml'
+  workflow_dispatch:
+    inputs:
+      image:
+        description: 'Specific image to build (leave empty for all changed images)'
+        required: false
+        type: string
+      dry_run:
+        description: 'Dry run (skip actual push)'
+        required: false
+        type: boolean
+        default: false
+
+jobs:
+  detect-changes:
+    runs-on: ubuntu-latest
+    outputs:
+      images: ${{ steps.changed-images.outputs.images }}
+      matrix: ${{ steps.set-matrix.outputs.matrix }}
+    steps:
+      - name: Checkout
+        uses: actions/checkout@08c6903cd8c0fde910a37f88322edcfb5dd907a8 # v5.0.0
+        with:
+          fetch-depth: 0
+
+      - name: Detect changed images
+        id: changed-images
+        run: |
+          set -euo pipefail
+
+          # If specific image is requested via workflow_dispatch
+          if [ -n "${{ github.event.inputs.image }}" ]; then
+            CHANGED_IMAGES="${{ github.event.inputs.image }}"
+            echo "Building specific image: $CHANGED_IMAGES"
+          # If it's a pull request, detect changes
+          elif [ "${{ github.event_name }}" = "pull_request" ]; then
+            CHANGED_FILES=$(git diff --name-only ${{ github.event.pull_request.base.sha }} ${{ github.sha }} | grep '^images/' || true)
+            CHANGED_IMAGES=$(echo "$CHANGED_FILES" | cut -d'/' -f2 | sort -u | tr '\n' ' ')
+          # If it's a push to main, detect changes in the last commit
+          elif [ "${{ github.event_name }}" = "push" ]; then
+            CHANGED_FILES=$(git diff --name-only ${{ github.event.before }} ${{ github.sha }} | grep '^images/' || true)
+            CHANGED_IMAGES=$(echo "$CHANGED_FILES" | cut -d'/' -f2 | sort -u | tr '\n' ' ')
+          # For workflow_dispatch without specific image, build all
+          else
+            CHANGED_IMAGES=$(ls -1 images/ | tr '\n' ' ')
+          fi
+
+          echo "Changed images: $CHANGED_IMAGES"
+          echo "images=$CHANGED_IMAGES" >> $GITHUB_OUTPUT
+
+      - name: Set matrix
+        id: set-matrix
+        run: |
+          IMAGES="${{ steps.changed-images.outputs.images }}"
+          if [ -z "$IMAGES" ]; then
+            echo "matrix={\"include\":[]}" >> $GITHUB_OUTPUT
+            echo "No images to build"
+          else
+            JSON_ARRAY="["
+            for img in $IMAGES; do
+              if [ -d "images/$img" ] && [ -f "images/$img/config.yaml" ]; then
+                JSON_ARRAY="$JSON_ARRAY{\"image\":\"$img\"},"
+              fi
+            done
+            JSON_ARRAY="${JSON_ARRAY%,}]"
+            echo "matrix={\"include\":$JSON_ARRAY}" >> $GITHUB_OUTPUT
+            echo "Matrix: $JSON_ARRAY"
+          fi
+
+  build-and-publish:
+    needs: detect-changes
+    if: needs.detect-changes.outputs.images != ''
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      packages: write
+    strategy:
+      fail-fast: false
+      matrix: ${{ fromJson(needs.detect-changes.outputs.matrix) }}
+    steps:
+      - name: Checkout
+        uses: actions/checkout@08c6903cd8c0fde910a37f88322edcfb5dd907a8 # v5.0.0
+
+      - name: Set up QEMU
+        uses: docker/setup-qemu-action@49b3bc8e6bdd4a60e6116a5414239cba5943d3cf # v3.2.0
+
+      - name: Set up Docker Buildx
+        uses: docker/setup-buildx-action@c47758b77c9736f4b2ef4073d4d51994fabfe349 # v3.7.1
+
+      - name: Login to Docker Hub
+        if: github.event_name != 'pull_request' && github.event.inputs.dry_run != 'true'
+        uses: docker/login-action@5e57cd118135c172c3672efd75eb46360885c0ef # v3.6.0
+        with:
+          username: ${{ secrets.DOCKERHUB_USERNAME }}
+          password: ${{ secrets.DOCKERHUB_TOKEN }}
+
+      - name: Login to GHCR
+        if: github.event_name != 'pull_request' && github.event.inputs.dry_run != 'true'
+        uses: docker/login-action@5e57cd118135c172c3672efd75eb46360885c0ef # v3.6.0
+        with:
+          registry: ghcr.io
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Install yq
+        run: |
+          sudo wget -qO /usr/local/bin/yq https://github.com/mikefarah/yq/releases/latest/download/yq_linux_amd64
+          sudo chmod +x /usr/local/bin/yq
+
+      - name: Parse image configuration
+        id: config
+        run: |
+          set -euo pipefail
+
+          IMAGE_NAME="${{ matrix.image }}"
+          CONFIG_FILE="images/$IMAGE_NAME/config.yaml"
+
+          if [ ! -f "$CONFIG_FILE" ]; then
+            echo "ERROR: Configuration file not found: $CONFIG_FILE"
+            exit 1
+          fi
+
+          # Parse config.yaml
+          BASE_IMAGE=$(yq eval '.base_image' "$CONFIG_FILE")
+          VERSION=$(yq eval '.version' "$CONFIG_FILE")
+          DESCRIPTION=$(yq eval '.description // ""' "$CONFIG_FILE")
+          PLATFORMS=$(yq eval '.platforms // "linux/amd64,linux/arm64"' "$CONFIG_FILE")
+          BUILD_ARGS=$(yq eval '.build_args // {}' "$CONFIG_FILE" -o json)
+
+          # Get GitHub repo owner in lowercase
+          REPO_OWNER=$(echo "${{ github.repository_owner }}" | tr '[:upper:]' '[:lower:]')
+
+          # Build tags
+          TAGS=""
+          if [ "${{ github.event_name }}" != "pull_request" ]; then
+            TAGS="cloudpirates/$IMAGE_NAME:$VERSION"
+            TAGS="$TAGS,cloudpirates/$IMAGE_NAME:latest"
+            TAGS="$TAGS,ghcr.io/$REPO_OWNER/container-images/$IMAGE_NAME:$VERSION"
+            TAGS="$TAGS,ghcr.io/$REPO_OWNER/container-images/$IMAGE_NAME:latest"
+          else
+            TAGS="cloudpirates/$IMAGE_NAME:pr-${{ github.event.pull_request.number }}"
+          fi
+
+          echo "base_image=$BASE_IMAGE" >> $GITHUB_OUTPUT
+          echo "version=$VERSION" >> $GITHUB_OUTPUT
+          echo "description=$DESCRIPTION" >> $GITHUB_OUTPUT
+          echo "platforms=$PLATFORMS" >> $GITHUB_OUTPUT
+          echo "tags=$TAGS" >> $GITHUB_OUTPUT
+          echo "build_args=$BUILD_ARGS" >> $GITHUB_OUTPUT
+
+          echo "Building $IMAGE_NAME:$VERSION from $BASE_IMAGE"
+          echo "Tags: $TAGS"
+
+      - name: Apply patches
+        id: patches
+        run: |
+          set -euo pipefail
+
+          IMAGE_NAME="${{ matrix.image }}"
+          PATCHES_DIR="images/$IMAGE_NAME/patches"
+
+          if [ -d "$PATCHES_DIR" ] && [ "$(ls -A $PATCHES_DIR/*.patch 2>/dev/null)" ]; then
+            echo "Applying patches for $IMAGE_NAME..."
+
+            # Create temporary directory for patched files
+            mkdir -p "/tmp/$IMAGE_NAME-patched"
+
+            # Apply each patch
+            for patch in $PATCHES_DIR/*.patch; do
+              echo "Applying patch: $(basename $patch)"
+              patch -p1 -d "/tmp/$IMAGE_NAME-patched" < "$patch" || {
+                echo "ERROR: Failed to apply patch: $patch"
+                exit 1
+              }
+            done
+
+            echo "patched=true" >> $GITHUB_OUTPUT
+            echo "patch_dir=/tmp/$IMAGE_NAME-patched" >> $GITHUB_OUTPUT
+          else
+            echo "No patches to apply"
+            echo "patched=false" >> $GITHUB_OUTPUT
+          fi
+
+      - name: Generate Dockerfile
+        run: |
+          set -euo pipefail
+
+          IMAGE_NAME="${{ matrix.image }}"
+          BASE_IMAGE="${{ steps.config.outputs.base_image }}"
+          VERSION="${{ steps.config.outputs.version }}"
+
+          DOCKERFILE="images/$IMAGE_NAME/Dockerfile.generated"
+          CUSTOM_DOCKERFILE="images/$IMAGE_NAME/Dockerfile"
+
+          # Use custom Dockerfile if it exists, otherwise generate one
+          if [ -f "$CUSTOM_DOCKERFILE" ]; then
+            echo "Using custom Dockerfile"
+            cp "$CUSTOM_DOCKERFILE" "$DOCKERFILE"
+          else
+            echo "Generating Dockerfile"
+            cat > "$DOCKERFILE" <<EOF
+          FROM $BASE_IMAGE
+
+          LABEL org.opencontainers.image.source="https://github.com/${{ github.repository }}"
+          LABEL org.opencontainers.image.description="${{ steps.config.outputs.description }}"
+          LABEL org.opencontainers.image.version="$VERSION"
+          LABEL org.opencontainers.image.vendor="CloudPirates"
+          LABEL org.opencontainers.image.licenses="Apache-2.0"
+
+          # Copy patches if they exist
+          EOF
+
+            if [ "${{ steps.patches.outputs.patched }}" = "true" ]; then
+              echo "COPY --from=patches / /" >> "$DOCKERFILE"
+            fi
+
+            # Add custom setup script if it exists
+            if [ -f "images/$IMAGE_NAME/setup.sh" ]; then
+              cat >> "$DOCKERFILE" <<EOF
+
+          COPY setup.sh /tmp/setup.sh
+          RUN chmod +x /tmp/setup.sh && /tmp/setup.sh && rm /tmp/setup.sh
+          EOF
+            fi
+          fi
+
+          echo "Generated Dockerfile:"
+          cat "$DOCKERFILE"
+
+      - name: Build and push
+        uses: docker/build-push-action@ca052bb54ab0790a636c9b5f226502c73d547a25 # v5.4.0
+        with:
+          context: images/${{ matrix.image }}
+          file: images/${{ matrix.image }}/Dockerfile.generated
+          platforms: ${{ steps.config.outputs.platforms }}
+          push: ${{ github.event_name != 'pull_request' && github.event.inputs.dry_run != 'true' }}
+          tags: ${{ steps.config.outputs.tags }}
+          cache-from: type=gha
+          cache-to: type=gha,mode=max
+          labels: |
+            org.opencontainers.image.source=${{ github.event.repository.html_url }}
+            org.opencontainers.image.created=${{ github.event.head_commit.timestamp }}
+            org.opencontainers.image.revision=${{ github.sha }}
+
+      - name: Install cosign
+        if: github.event_name != 'pull_request' && github.event.inputs.dry_run != 'true'
+        uses: sigstore/cosign-installer@v3.10.0
+
+      - name: Sign images
+        if: github.event_name != 'pull_request' && github.event.inputs.dry_run != 'true'
+        env:
+          COSIGN_KEY: ${{ secrets.COSIGN_KEY }}
+          COSIGN_PASSWORD: ${{ secrets.COSIGN_PASSWORD }}
+        run: |
+          set -euo pipefail
+
+          IMAGE_NAME="${{ matrix.image }}"
+          VERSION="${{ steps.config.outputs.version }}"
+          REPO_OWNER=$(echo "${{ github.repository_owner }}" | tr '[:upper:]' '[:lower:]')
+
+          # Sign Docker Hub image
+          cosign sign -y --key env://COSIGN_KEY \
+            cloudpirates/$IMAGE_NAME:$VERSION
+
+          # Sign GHCR image
+          cosign sign -y --key env://COSIGN_KEY \
+            ghcr.io/$REPO_OWNER/container-images/$IMAGE_NAME:$VERSION
+
+          echo "Successfully signed images for $IMAGE_NAME:$VERSION"
+
+      - name: Generate job summary
+        if: github.event_name != 'pull_request'
+        run: |
+          echo "## Container Image Built" >> $GITHUB_STEP_SUMMARY
+          echo "" >> $GITHUB_STEP_SUMMARY
+          echo "Successfully built and published **${{ matrix.image }}:${{ steps.config.outputs.version }}**" >> $GITHUB_STEP_SUMMARY
+          echo "" >> $GITHUB_STEP_SUMMARY
+          echo "### Pull Commands" >> $GITHUB_STEP_SUMMARY
+          echo "\`\`\`bash" >> $GITHUB_STEP_SUMMARY
+          echo "# From Docker Hub" >> $GITHUB_STEP_SUMMARY
+          echo "docker pull cloudpirates/${{ matrix.image }}:${{ steps.config.outputs.version }}" >> $GITHUB_STEP_SUMMARY
+          echo "" >> $GITHUB_STEP_SUMMARY
+          echo "# From GHCR" >> $GITHUB_STEP_SUMMARY
+          REPO_OWNER=$(echo "${{ github.repository_owner }}" | tr '[:upper:]' '[:lower:]')
+          echo "docker pull ghcr.io/$REPO_OWNER/container-images/${{ matrix.image }}:${{ steps.config.outputs.version }}" >> $GITHUB_STEP_SUMMARY
+          echo "\`\`\`" >> $GITHUB_STEP_SUMMARY

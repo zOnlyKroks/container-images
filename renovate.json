@@ -1,0 +1,66 @@
+{
+  "$schema": "https://docs.renovatebot.com/renovate-schema.json",
+  "extends": [
+    "config:recommended"
+  ],
+  "labels": ["dependencies"],
+  "commitMessagePrefix": "chore:",
+  "semanticCommits": "enabled",
+  "schedule": ["before 6am every weekday"],
+  "timezone": "UTC",
+  "prConcurrentLimit": 5,
+  "prHourlyLimit": 2,
+  "separateMinorPatch": true,
+  "packageRules": [
+    {
+      "description": "Dockerfile base images",
+      "matchDatasources": ["docker"],
+      "matchFileNames": ["images/**/Dockerfile"],
+      "enabled": true,
+      "separateMinorPatch": true,
+      "groupName": "Docker base images"
+    },
+    {
+      "description": "GitHub Actions",
+      "matchManagers": ["github-actions"],
+      "automerge": true,
+      "automergeType": "pr",
+      "groupName": "GitHub Actions"
+    },
+    {
+      "description": "Pin GitHub Actions digests",
+      "matchManagers": ["github-actions"],
+      "pinDigests": true
+    }
+  ],
+  "regexManagers": [
+    {
+      "description": "Update MinIO version in config.yaml",
+      "fileMatch": ["^images/minio/config\\.yaml$"],
+      "matchStrings": [
+        "version:\\s*[\"']?(?<currentValue>RELEASE\\.[0-9T\\-Z]+)[\"']?"
+      ],
+      "datasourceTemplate": "custom.minio",
+      "depNameTemplate": "minio/minio",
+      "versioningTemplate": "loose"
+    },
+    {
+      "description": "Update MinIO RELEASE in Dockerfile",
+      "fileMatch": ["^images/minio/Dockerfile$"],
+      "matchStrings": [
+        "ARG RELEASE=(?<currentValue>RELEASE\\.[0-9T\\-Z]+)"
+      ],
+      "datasourceTemplate": "github-releases",
+      "depNameTemplate": "minio/minio",
+      "extractVersionTemplate": "^(?<version>RELEASE\\..+)$"
+    }
+  ],
+  "customDatasources": {
+    "minio": {
+      "defaultRegistryUrlTemplate": "https://api.github.com/repos/minio/minio/releases",
+      "transformTemplates": [
+        "{\"releases\": $map($, function($v) { {\"version\": $v.tag_name, \"releaseTimestamp\": $v.published_at} })}"
+      ]
+    }
+  }
+}
