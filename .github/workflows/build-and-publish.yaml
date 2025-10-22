@@ -66,17 +66,28 @@ jobs:
         id: set-matrix
         run: |
           IMAGES="${{ steps.changed-images.outputs.images }}"
-          if [ -z "$IMAGES" ]; then
-            echo "matrix={\"include\":[]}" >> $GITHUB_OUTPUT
+          if [ -z "$IMAGES" ] || [ "$IMAGES" = " " ]; then
+            # No images to build - create empty matrix with dummy entry
+            # The build job will be skipped via the 'if' condition
+            echo "matrix={\"include\":[{\"image\":\"none\"}]}" >> $GITHUB_OUTPUT
             echo "No images to build"
           else
             JSON_ARRAY="["
+            FOUND_VALID_IMAGE=false
             for img in $IMAGES; do
               if [ -d "images/$img" ] && [ -f "images/$img/config.yaml" ]; then
                 JSON_ARRAY="$JSON_ARRAY{\"image\":\"$img\"},"
+                FOUND_VALID_IMAGE=true
               fi
             done
-            JSON_ARRAY="${JSON_ARRAY%,}]"
+
+            if [ "$FOUND_VALID_IMAGE" = "true" ]; then
+              JSON_ARRAY="${JSON_ARRAY%,}]"
+            else
+              # No valid images found - create dummy entry
+              JSON_ARRAY="[{\"image\":\"none\"}]"
+            fi
+
             echo "matrix={\"include\":$JSON_ARRAY}" >> $GITHUB_OUTPUT
             echo "Matrix: $JSON_ARRAY"
           fi
@@ -91,6 +102,7 @@ jobs:
     strategy:
       fail-fast: false
       matrix: ${{ fromJson(needs.detect-changes.outputs.matrix) }}
+      # Ensure matrix is not evaluated when job is skipped
     steps:
       - name: Checkout
         uses: actions/checkout@08c6903cd8c0fde910a37f88322edcfb5dd907a8 # v5.0.0
