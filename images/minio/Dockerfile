@@ -62,9 +62,12 @@ ENV MINIO_ROOT_USER=admin \
 # Copy CA certificates
 COPY --from=build /etc/ssl/certs/ca-certificates.crt /etc/ssl/certs/
 
-# Copy verified binaries and verification files
-COPY --from=build /go/bin/minio* /usr/bin/
-COPY --from=build /go/bin/mc* /usr/bin/
+# Copy verified binaries (explicit names to avoid wildcards)
+COPY --from=build /go/bin/minio /usr/bin/minio
+COPY --from=build /go/bin/mc /usr/bin/mc
+
+# Ensure binaries are executable
+RUN chmod +x /usr/bin/minio /usr/bin/mc
 
 # Create entrypoint script
 RUN echo '#!/bin/sh' > /usr/bin/docker-entrypoint.sh && \
