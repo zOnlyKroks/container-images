@@ -320,11 +320,46 @@ jobs:
           # Ignore push failures for Docker Hub if credentials are missing
           # Docker will push to available registries only
 
+      - name: Wait for image to be available
+        if: github.event_name != 'pull_request'
+        run: |
+          set -euo pipefail
+
+          IMAGE_NAME="${{ matrix.image }}"
+          VERSION="${{ steps.config.outputs.version }}"
+          REPO_OWNER=$(echo "${{ github.repository_owner }}" | tr '[:upper:]' '[:lower:]')
+          IMAGE_REF="ghcr.io/$REPO_OWNER/container-images/$IMAGE_NAME:$VERSION"
+
+          echo "Waiting for image to be available: $IMAGE_REF"
+
+          # Wait up to 60 seconds for image to be pullable
+          RETRIES=30
+          until docker pull "$IMAGE_REF" >/dev/null 2>&1; do
+            RETRIES=$((RETRIES - 1))
+            if [ $RETRIES -eq 0 ]; then
+              echo "⚠️  Image not available yet, continuing anyway"
+              break
+            fi
+            echo "Waiting for image... ($RETRIES attempts remaining)"
+            sleep 2
+          done
+
+          echo "Image is available"
+
+      - name: Set image reference for scanning
+        if: github.event_name != 'pull_request'
+        id: scan-ref
+        run: |
+          REPO_OWNER=$(echo "${{ github.repository_owner }}" | tr '[:upper:]' '[:lower:]')
+          IMAGE_REF="ghcr.io/$REPO_OWNER/container-images/${{ matrix.image }}:${{ steps.config.outputs.version }}"
+          echo "image_ref=$IMAGE_REF" >> $GITHUB_OUTPUT
+          echo "Scanning image: $IMAGE_REF"
+
       - name: Run Trivy vulnerability scanner
         if: github.event_name != 'pull_request'
         uses: aquasecurity/trivy-action@b6643a29fecd7f34b3597bc6acb0a98b03d33ff8 # v0.33.1
         with:
-          image-ref: ghcr.io/${{ github.repository_owner }}/container-images/${{ matrix.image }}:${{ steps.config.outputs.version }}
+          image-ref: ${{ steps.scan-ref.outputs.image_ref }}
           format: 'sarif'
           output: 'trivy-results.sarif'
           severity: 'CRITICAL,HIGH'
@@ -341,7 +376,7 @@ jobs:
         if: github.event_name != 'pull_request'
         uses: aquasecurity/trivy-action@b6643a29fecd7f34b3597bc6acb0a98b03d33ff8 # v0.33.1
         with:
-          image-ref: ghcr.io/${{ github.repository_owner }}/container-images/${{ matrix.image }}:${{ steps.config.outputs.version }}
+          image-ref: ${{ steps.scan-ref.outputs.image_ref }}
           format: 'table'
           severity: 'CRITICAL,HIGH,MEDIUM'
         continue-on-error: true
