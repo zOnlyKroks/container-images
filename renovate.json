@@ -50,7 +50,7 @@
       "customType": "regex",
       "description": "Update MinIO RELEASE in Dockerfile",
       "fileMatch": [
-        "^images/minio/Dockerfile$"
+        "(^|/)images/minio/Dockerfile$"
       ],
       "matchStrings": [
         "ARG RELEASE=(?<currentValue>RELEASE\\.[0-9T\\-Z]+)"
