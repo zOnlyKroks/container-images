@@ -45,7 +45,7 @@
       "pinDigests": true
     }
   ],
-  "regexManagers": [
+  "customManagers": [
     {
       "customType": "regex",
       "description": "Update MinIO RELEASE in Dockerfile",
