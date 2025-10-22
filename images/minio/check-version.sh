@@ -25,6 +25,12 @@ if [[ "$LATEST_VERSION" > "$CURRENT_VERSION" ]]; then
   # Update Dockerfile
   sed -i "s|ARG RELEASE=$CURRENT_VERSION|ARG RELEASE=$LATEST_VERSION|g" Dockerfile
 
+  # Update config.yaml - version field
+  sed -i "s|version: \"$CURRENT_VERSION\"|version: \"$LATEST_VERSION\"|g" config.yaml
+
+  # Update config.yaml - build_args RELEASE field
+  sed -i "s|RELEASE: \"$CURRENT_VERSION\"|RELEASE: \"$LATEST_VERSION\"|g" config.yaml
+
   # Get release notes
   RELEASE_NOTES=$(curl -s https://api.github.com/repos/minio/minio/releases/latest | jq -r '.body' | head -20)
 
