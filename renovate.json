@@ -10,14 +10,14 @@
   "timezone": "UTC",
   "prConcurrentLimit": 5,
   "prHourlyLimit": 2,
-  "separateMinorPatch": true,
+  "separateMinorPatch": false,
   "packageRules": [
     {
       "description": "Dockerfile base images",
       "matchDatasources": ["docker"],
       "matchFileNames": ["images/**/Dockerfile"],
       "enabled": true,
-      "separateMinorPatch": true,
+      "separateMinorPatch": false,
       "groupName": "Docker base images"
     },
     {
@@ -35,16 +35,6 @@
   ],
   "regexManagers": [
     {
-      "description": "Update MinIO version in config.yaml",
-      "fileMatch": ["^images/minio/config\\.yaml$"],
-      "matchStrings": [
-        "version:\\s*[\"']?(?<currentValue>RELEASE\\.[0-9T\\-Z]+)[\"']?"
-      ],
-      "datasourceTemplate": "custom.minio",
-      "depNameTemplate": "minio/minio",
-      "versioningTemplate": "loose"
-    },
-    {
       "description": "Update MinIO RELEASE in Dockerfile",
       "fileMatch": ["^images/minio/Dockerfile$"],
       "matchStrings": [
@@ -54,13 +44,5 @@
       "depNameTemplate": "minio/minio",
       "extractVersionTemplate": "^(?<version>RELEASE\\..+)$"
     }
-  ],
-  "customDatasources": {
-    "minio": {
-      "defaultRegistryUrlTemplate": "https://api.github.com/repos/minio/minio/releases",
-      "transformTemplates": [
-        "{\"releases\": $map($, function($v) { {\"version\": $v.tag_name, \"releaseTimestamp\": $v.published_at} })}"
-      ]
-    }
-  }
+  ]
 }
