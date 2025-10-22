@@ -103,24 +103,27 @@ jobs:
 
       - name: Check credentials availability
         id: check-creds
+        env:
+          DOCKERHUB_USERNAME: ${{ secrets.DOCKERHUB_USERNAME }}
+          DOCKERHUB_TOKEN: ${{ secrets.DOCKERHUB_TOKEN }}
+          COSIGN_KEY: ${{ secrets.COSIGN_KEY }}
+          COSIGN_PASSWORD: ${{ secrets.COSIGN_PASSWORD }}
         run: |
-          set -euo pipefail
-
           HAS_DOCKERHUB_CREDS="false"
           HAS_COSIGN_CREDS="false"
 
-          if [ -n "${{ secrets.DOCKERHUB_USERNAME }}" ] && [ -n "${{ secrets.DOCKERHUB_TOKEN }}" ]; then
+          if [ -n "$DOCKERHUB_USERNAME" ] && [ -n "$DOCKERHUB_TOKEN" ]; then
             HAS_DOCKERHUB_CREDS="true"
-            echo "Docker Hub credentials available"
+            echo "✓ Docker Hub credentials available"
           else
-            echo "Docker Hub credentials not available - publishing will be skipped"
+            echo "⚠ Docker Hub credentials not available - publishing to Docker Hub will be skipped"
           fi
 
-          if [ -n "${{ secrets.COSIGN_KEY }}" ] && [ -n "${{ secrets.COSIGN_PASSWORD }}" ]; then
+          if [ -n "$COSIGN_KEY" ] && [ -n "$COSIGN_PASSWORD" ]; then
             HAS_COSIGN_CREDS="true"
-            echo "Cosign credentials available"
+            echo "✓ Cosign credentials available"
           else
-            echo "Cosign credentials not available - image signing will be skipped"
+            echo "⚠ Cosign credentials not available - image signing will be skipped"
           fi
 
           echo "dockerhub=$HAS_DOCKERHUB_CREDS" >> $GITHUB_OUTPUT
