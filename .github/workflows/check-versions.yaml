@@ -2,7 +2,7 @@ name: Check for Version Updates
 
 on:
   schedule:
-    - cron: '0 6 * * 1' # Every Monday at 6 AM UTC
+    - cron: '0 12 * * *'
   workflow_dispatch: # Allow manual triggering
 
 permissions:
