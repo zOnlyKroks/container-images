@@ -1,29 +1,43 @@
 name: Build and Publish Container Images
 
 on:
-  push:
-    branches:
-      - main
-    paths:
-      - 'images/**'
-      - '.github/workflows/build-and-publish.yaml'
-  pull_request:
-    branches:
-      - main
-    paths:
-      - 'images/**'
-      - '.github/workflows/build-and-publish.yaml'
   workflow_dispatch:
     inputs:
-      image:
-        description: 'Specific image to build (leave empty for all changed images)'
-        required: false
+      images:
+        description: 'Images to build (comma-separated, e.g., "etcd,openldap" or "all" for all images)'
+        required: true
         type: string
-      dry_run:
-        description: 'Dry run (skip actual push)'
+        default: 'all'
+      push_to_dockerhub:
+        description: 'Push to Docker Hub'
         required: false
         type: boolean
-        default: false
+        default: true
+      push_to_ghcr:
+        description: 'Push to GitHub Container Registry'
+        required: false
+        type: boolean
+        default: true
+      sign_images:
+        description: 'Sign images with Cosign'
+        required: false
+        type: boolean
+        default: true
+      run_security_scan:
+        description: 'Run Trivy security scan'
+        required: false
+        type: boolean
+        default: true
+      platforms:
+        description: 'Target platforms (leave empty to use config.yaml defaults)'
+        required: false
+        type: string
+        default: ''
+      tag_suffix:
+        description: 'Optional tag suffix (e.g., "rc1", "beta")'
+        required: false
+        type: string
+        default: ''
 
 jobs:
   detect-changes:
@@ -42,24 +56,19 @@ jobs:
         run: |
           set -euo pipefail
 
-          # If specific image is requested via workflow_dispatch
-          if [ -n "${{ github.event.inputs.image }}" ]; then
-            CHANGED_IMAGES="${{ github.event.inputs.image }}"
-            echo "Building specific image: $CHANGED_IMAGES"
-          # If it's a pull request, detect changes
-          elif [ "${{ github.event_name }}" = "pull_request" ]; then
-            CHANGED_FILES=$(git diff --name-only ${{ github.event.pull_request.base.sha }} ${{ github.sha }} | grep '^images/' || true)
-            CHANGED_IMAGES=$(echo "$CHANGED_FILES" | cut -d'/' -f2 | sort -u | tr '\n' ' ')
-          # If it's a push to main, detect changes in the last commit
-          elif [ "${{ github.event_name }}" = "push" ]; then
-            CHANGED_FILES=$(git diff --name-only ${{ github.event.before }} ${{ github.sha }} | grep '^images/' || true)
-            CHANGED_IMAGES=$(echo "$CHANGED_FILES" | cut -d'/' -f2 | sort -u | tr '\n' ' ')
-          # For workflow_dispatch without specific image, build all
-          else
+          # Parse input images
+          INPUT_IMAGES="${{ github.event.inputs.images }}"
+
+          if [ "$INPUT_IMAGES" = "all" ]; then
+            # Build all available images
             CHANGED_IMAGES=$(ls -1 images/ | tr '\n' ' ')
+            echo "Building all images: $CHANGED_IMAGES"
+          else
+            # Build specific images (comma or space separated)
+            CHANGED_IMAGES=$(echo "$INPUT_IMAGES" | tr ',' ' ')
+            echo "Building specific images: $CHANGED_IMAGES"
           fi
 
-          echo "Changed images: $CHANGED_IMAGES"
           echo "images=$CHANGED_IMAGES" >> $GITHUB_OUTPUT
 
       - name: Set matrix
@@ -149,14 +158,14 @@ jobs:
           echo "cosign=$HAS_COSIGN_CREDS" >> $GITHUB_OUTPUT
 
       - name: Login to Docker Hub
-        if: github.event_name != 'pull_request' && github.event.inputs.dry_run != 'true' && steps.check-creds.outputs.dockerhub == 'true'
+        if: github.event.inputs.push_to_dockerhub == 'true' && steps.check-creds.outputs.dockerhub == 'true'
         uses: docker/login-action@5e57cd118135c172c3672efd75eb46360885c0ef # v3.6.0
         with:
           username: ${{ secrets.DOCKERHUB_USERNAME }}
           password: ${{ secrets.DOCKERHUB_TOKEN }}
 
       - name: Login to GHCR
-        if: github.event_name != 'pull_request' && github.event.inputs.dry_run != 'true'
+        if: github.event.inputs.push_to_ghcr == 'true'
         uses: docker/login-action@5e57cd118135c172c3672efd75eb46360885c0ef # v3.6.0
         with:
           registry: ghcr.io
@@ -185,31 +194,55 @@ jobs:
           BASE_IMAGE=$(yq eval '.base_image' "$CONFIG_FILE")
           VERSION=$(yq eval '.version' "$CONFIG_FILE")
           DESCRIPTION=$(yq eval '.description // ""' "$CONFIG_FILE")
-          PLATFORMS=$(yq eval '.platforms // "linux/amd64,linux/arm64"' "$CONFIG_FILE")
+
+          # Use custom platforms if provided, otherwise use config.yaml
+          if [ -n "${{ github.event.inputs.platforms }}" ]; then
+            PLATFORMS="${{ github.event.inputs.platforms }}"
+            echo "Using custom platforms: $PLATFORMS"
+          else
+            PLATFORMS=$(yq eval '.platforms // "linux/amd64,linux/arm64"' "$CONFIG_FILE")
+            echo "Using config.yaml platforms: $PLATFORMS"
+          fi
+
           BUILD_ARGS=$(yq eval '.build_args // {}' "$CONFIG_FILE" -o json -I=0)
 
           # Get GitHub repo owner in lowercase
           REPO_OWNER=$(echo "${{ github.repository_owner }}" | tr '[:upper:]' '[:lower:]')
 
-          # Build tags based on available credentials
+          # Apply tag suffix if provided
+          TAG_SUFFIX=""
+          if [ -n "${{ github.event.inputs.tag_suffix }}" ]; then
+            TAG_SUFFIX="-${{ github.event.inputs.tag_suffix }}"
+          fi
+
+          # Build tags based on selected registries
           TAGS=""
-          if [ "${{ github.event_name }}" != "pull_request" ]; then
-            # Add Docker Hub tags only if credentials are available
-            if [ "${{ steps.check-creds.outputs.dockerhub }}" = "true" ]; then
-              TAGS="cloudpirates/$IMAGE_NAME:$VERSION"
+
+          # Add Docker Hub tags if enabled and credentials are available
+          if [ "${{ github.event.inputs.push_to_dockerhub }}" = "true" ] && [ "${{ steps.check-creds.outputs.dockerhub }}" = "true" ]; then
+            TAGS="cloudpirates/$IMAGE_NAME:$VERSION$TAG_SUFFIX"
+            if [ -z "$TAG_SUFFIX" ]; then
               TAGS="$TAGS,cloudpirates/$IMAGE_NAME:latest"
             fi
+          fi
 
-            # Add GHCR tags (always available via GITHUB_TOKEN)
+          # Add GHCR tags if enabled
+          if [ "${{ github.event.inputs.push_to_ghcr }}" = "true" ]; then
             if [ -n "$TAGS" ]; then
-              TAGS="$TAGS,ghcr.io/$REPO_OWNER/container-images/$IMAGE_NAME:$VERSION"
-              TAGS="$TAGS,ghcr.io/$REPO_OWNER/container-images/$IMAGE_NAME:latest"
+              TAGS="$TAGS,ghcr.io/$REPO_OWNER/container-images/$IMAGE_NAME:$VERSION$TAG_SUFFIX"
             else
-              TAGS="ghcr.io/$REPO_OWNER/container-images/$IMAGE_NAME:$VERSION"
+              TAGS="ghcr.io/$REPO_OWNER/container-images/$IMAGE_NAME:$VERSION$TAG_SUFFIX"
+            fi
+
+            if [ -z "$TAG_SUFFIX" ]; then
               TAGS="$TAGS,ghcr.io/$REPO_OWNER/container-images/$IMAGE_NAME:latest"
             fi
-          else
-            TAGS="cloudpirates/$IMAGE_NAME:pr-${{ github.event.pull_request.number }}"
+          fi
+
+          # Error if no registry is selected
+          if [ -z "$TAGS" ]; then
+            echo "ERROR: No registry selected or credentials not available"
+            exit 1
           fi
 
           echo "base_image=$BASE_IMAGE" >> $GITHUB_OUTPUT
@@ -305,8 +338,8 @@ jobs:
           context: images/${{ matrix.image }}
           file: images/${{ matrix.image }}/Dockerfile.generated
           platforms: ${{ steps.config.outputs.platforms }}
-          # Push only if not PR, not dry run, and we have credentials (GITHUB_TOKEN is always available for GHCR)
-          push: ${{ github.event_name != 'pull_request' && github.event.inputs.dry_run != 'true' }}
+          # Push only if at least one registry is enabled
+          push: ${{ github.event.inputs.push_to_dockerhub == 'true' || github.event.inputs.push_to_ghcr == 'true' }}
           tags: ${{ steps.config.outputs.tags }}
           cache-from: type=gha
           cache-to: type=gha,mode=max
@@ -318,11 +351,9 @@ jobs:
           sbom: true
           provenance: true
           outputs: type=image,name=target,annotation-index.org.opencontainers.image.description=${{ steps.config.outputs.description }}
-          # Ignore push failures for Docker Hub if credentials are missing
-          # Docker will push to available registries only
 
       - name: Wait for image to be available
-        if: github.event_name != 'pull_request'
+        if: github.event.inputs.push_to_ghcr == 'true' && github.event.inputs.run_security_scan == 'true'
         run: |
           set -euo pipefail
 
@@ -348,16 +379,23 @@ jobs:
           echo "Image is available"
 
       - name: Set image reference for scanning
-        if: github.event_name != 'pull_request'
+        if: github.event.inputs.run_security_scan == 'true' && github.event.inputs.push_to_ghcr == 'true'
         id: scan-ref
         run: |
           REPO_OWNER=$(echo "${{ github.repository_owner }}" | tr '[:upper:]' '[:lower:]')
-          IMAGE_REF="ghcr.io/$REPO_OWNER/container-images/${{ matrix.image }}:${{ steps.config.outputs.version }}"
+
+          # Apply tag suffix if provided
+          TAG_SUFFIX=""
+          if [ -n "${{ github.event.inputs.tag_suffix }}" ]; then
+            TAG_SUFFIX="-${{ github.event.inputs.tag_suffix }}"
+          fi
+
+          IMAGE_REF="ghcr.io/$REPO_OWNER/container-images/${{ matrix.image }}:${{ steps.config.outputs.version }}$TAG_SUFFIX"
           echo "image_ref=$IMAGE_REF" >> $GITHUB_OUTPUT
           echo "Scanning image: $IMAGE_REF"
 
       - name: Run Trivy vulnerability scanner
-        if: github.event_name != 'pull_request'
+        if: github.event.inputs.run_security_scan == 'true' && github.event.inputs.push_to_ghcr == 'true'
         uses: aquasecurity/trivy-action@b6643a29fecd7f34b3597bc6acb0a98b03d33ff8 # v0.33.1
         with:
           image-ref: ${{ steps.scan-ref.outputs.image_ref }}
@@ -367,14 +405,14 @@ jobs:
         continue-on-error: true
 
       - name: Upload Trivy results to GitHub Security
-        if: github.event_name != 'pull_request'
+        if: github.event.inputs.run_security_scan == 'true' && github.event.inputs.push_to_ghcr == 'true'
         uses: github/codeql-action/upload-sarif@f09c1c0a94de965c15400f5634aa42fac8fb8f88 # v3.28.5
         with:
           sarif_file: 'trivy-results.sarif'
         continue-on-error: true
 
       - name: Run Trivy for summary
-        if: github.event_name != 'pull_request'
+        if: github.event.inputs.run_security_scan == 'true' && github.event.inputs.push_to_ghcr == 'true'
         uses: aquasecurity/trivy-action@b6643a29fecd7f34b3597bc6acb0a98b03d33ff8 # v0.33.1
         with:
           image-ref: ${{ steps.scan-ref.outputs.image_ref }}
@@ -382,23 +420,12 @@ jobs:
           severity: 'CRITICAL,HIGH,MEDIUM'
         continue-on-error: true
 
-      - name: Run Trivy on PR (scan Dockerfile)
-        if: github.event_name == 'pull_request'
-        uses: aquasecurity/trivy-action@b6643a29fecd7f34b3597bc6acb0a98b03d33ff8 # v0.33.1
-        with:
-          scan-type: 'config'
-          scan-ref: 'images/${{ matrix.image }}'
-          format: 'table'
-          severity: 'CRITICAL,HIGH,MEDIUM'
-          exit-code: '0'
-        continue-on-error: true
-
       - name: Install cosign
-        if: github.event_name != 'pull_request' && github.event.inputs.dry_run != 'true' && steps.check-creds.outputs.cosign == 'true'
+        if: github.event.inputs.sign_images == 'true' && steps.check-creds.outputs.cosign == 'true'
         uses: sigstore/cosign-installer@faadad0cce49287aee09b3a48701e75088a2c6ad # v4.0.0
 
       - name: Sign images
-        if: github.event_name != 'pull_request' && github.event.inputs.dry_run != 'true' && steps.check-creds.outputs.cosign == 'true'
+        if: github.event.inputs.sign_images == 'true' && steps.check-creds.outputs.cosign == 'true'
         env:
           COSIGN_KEY: ${{ secrets.COSIGN_KEY }}
           COSIGN_PASSWORD: ${{ secrets.COSIGN_PASSWORD }}
@@ -409,62 +436,108 @@ jobs:
           VERSION="${{ steps.config.outputs.version }}"
           REPO_OWNER=$(echo "${{ github.repository_owner }}" | tr '[:upper:]' '[:lower:]')
 
-          # Sign Docker Hub image only if credentials are available
-          if [ "${{ steps.check-creds.outputs.dockerhub }}" = "true" ]; then
-            echo "Signing Docker Hub image..."
-            cosign sign -y --key env://COSIGN_KEY \
-              cloudpirates/$IMAGE_NAME:$VERSION
+          # Apply tag suffix if provided
+          TAG_SUFFIX=""
+          if [ -n "${{ github.event.inputs.tag_suffix }}" ]; then
+            TAG_SUFFIX="-${{ github.event.inputs.tag_suffix }}"
           fi
 
-          # Sign GHCR image
-          echo "Signing GHCR image..."
-          cosign sign -y --key env://COSIGN_KEY \
-            ghcr.io/$REPO_OWNER/container-images/$IMAGE_NAME:$VERSION
+          # Sign Docker Hub image if push is enabled
+          if [ "${{ github.event.inputs.push_to_dockerhub }}" = "true" ] && [ "${{ steps.check-creds.outputs.dockerhub }}" = "true" ]; then
+            echo "Signing Docker Hub image..."
+            cosign sign -y --key env://COSIGN_KEY \
+              cloudpirates/$IMAGE_NAME:$VERSION$TAG_SUFFIX
+          fi
 
-          echo "Successfully signed images for $IMAGE_NAME:$VERSION"
+          # Sign GHCR image if push is enabled
+          if [ "${{ github.event.inputs.push_to_ghcr }}" = "true" ]; then
+            echo "Signing GHCR image..."
+            cosign sign -y --key env://COSIGN_KEY \
+              ghcr.io/$REPO_OWNER/container-images/$IMAGE_NAME:$VERSION$TAG_SUFFIX
+          fi
+
+          echo "Successfully signed images for $IMAGE_NAME:$VERSION$TAG_SUFFIX"
 
       - name: Generate job summary
-        if: github.event_name != 'pull_request'
         run: |
+          # Apply tag suffix if provided
+          TAG_SUFFIX=""
+          if [ -n "${{ github.event.inputs.tag_suffix }}" ]; then
+            TAG_SUFFIX="-${{ github.event.inputs.tag_suffix }}"
+          fi
+
           echo "## Container Image Built" >> $GITHUB_STEP_SUMMARY
           echo "" >> $GITHUB_STEP_SUMMARY
-          echo "Successfully built **${{ matrix.image }}:${{ steps.config.outputs.version }}**" >> $GITHUB_STEP_SUMMARY
+          echo "Successfully built **${{ matrix.image }}:${{ steps.config.outputs.version }}$TAG_SUFFIX**" >> $GITHUB_STEP_SUMMARY
+          echo "" >> $GITHUB_STEP_SUMMARY
+
+          # Show build configuration
+          echo "### Build Configuration" >> $GITHUB_STEP_SUMMARY
+          echo "- **Platforms**: ${{ steps.config.outputs.platforms }}" >> $GITHUB_STEP_SUMMARY
+          if [ -n "$TAG_SUFFIX" ]; then
+            echo "- **Tag Suffix**: $TAG_SUFFIX" >> $GITHUB_STEP_SUMMARY
+          fi
           echo "" >> $GITHUB_STEP_SUMMARY
 
           # Show publishing status
-          if [ "${{ steps.check-creds.outputs.dockerhub }}" = "true" ]; then
-            echo "✅ Published to Docker Hub" >> $GITHUB_STEP_SUMMARY
+          echo "### Publishing Status" >> $GITHUB_STEP_SUMMARY
+          if [ "${{ github.event.inputs.push_to_dockerhub }}" = "true" ]; then
+            if [ "${{ steps.check-creds.outputs.dockerhub }}" = "true" ]; then
+              echo "✅ Published to Docker Hub" >> $GITHUB_STEP_SUMMARY
+            else
+              echo "⚠️  Docker Hub credentials not available - publishing skipped" >> $GITHUB_STEP_SUMMARY
+            fi
           else
-            echo "⚠️  Docker Hub credentials not available - publishing to Docker Hub skipped" >> $GITHUB_STEP_SUMMARY
+            echo "⏭️  Docker Hub push disabled" >> $GITHUB_STEP_SUMMARY
           fi
-          echo "✅ Published to GHCR" >> $GITHUB_STEP_SUMMARY
+
+          if [ "${{ github.event.inputs.push_to_ghcr }}" = "true" ]; then
+            echo "✅ Published to GHCR" >> $GITHUB_STEP_SUMMARY
+          else
+            echo "⏭️  GHCR push disabled" >> $GITHUB_STEP_SUMMARY
+          fi
           echo "" >> $GITHUB_STEP_SUMMARY
 
           # Show signing status
-          if [ "${{ steps.check-creds.outputs.cosign }}" = "true" ]; then
-            echo "✅ Images signed with Cosign" >> $GITHUB_STEP_SUMMARY
+          echo "### Security" >> $GITHUB_STEP_SUMMARY
+          if [ "${{ github.event.inputs.sign_images }}" = "true" ]; then
+            if [ "${{ steps.check-creds.outputs.cosign }}" = "true" ]; then
+              echo "✅ Images signed with Cosign" >> $GITHUB_STEP_SUMMARY
+            else
+              echo "⚠️  Cosign credentials not available - signing skipped" >> $GITHUB_STEP_SUMMARY
+            fi
           else
-            echo "⚠️  Cosign credentials not available - image signing skipped" >> $GITHUB_STEP_SUMMARY
+            echo "⏭️  Image signing disabled" >> $GITHUB_STEP_SUMMARY
+          fi
+
+          echo "✅ SBOM generated" >> $GITHUB_STEP_SUMMARY
+          echo "✅ Provenance attestation created" >> $GITHUB_STEP_SUMMARY
+
+          if [ "${{ github.event.inputs.run_security_scan }}" = "true" ]; then
+            if [ "${{ github.event.inputs.push_to_ghcr }}" = "true" ]; then
+              echo "✅ Vulnerability scan completed (check Security tab for details)" >> $GITHUB_STEP_SUMMARY
+            else
+              echo "⚠️  Security scan requires GHCR push to be enabled" >> $GITHUB_STEP_SUMMARY
+            fi
+          else
+            echo "⏭️  Security scan disabled" >> $GITHUB_STEP_SUMMARY
           fi
           echo "" >> $GITHUB_STEP_SUMMARY
 
-          # Show security scanning status
-          echo "### Security & Supply Chain" >> $GITHUB_STEP_SUMMARY
-          echo "✅ SBOM generated" >> $GITHUB_STEP_SUMMARY
-          echo "✅ Provenance attestation created" >> $GITHUB_STEP_SUMMARY
-          echo "✅ Vulnerability scan completed (check Security tab for details)" >> $GITHUB_STEP_SUMMARY
-          echo "" >> $GITHUB_STEP_SUMMARY
-
+          # Show pull commands only for enabled registries
           echo "### Pull Commands" >> $GITHUB_STEP_SUMMARY
           echo "\`\`\`bash" >> $GITHUB_STEP_SUMMARY
 
-          if [ "${{ steps.check-creds.outputs.dockerhub }}" = "true" ]; then
+          if [ "${{ github.event.inputs.push_to_dockerhub }}" = "true" ] && [ "${{ steps.check-creds.outputs.dockerhub }}" = "true" ]; then
             echo "# From Docker Hub" >> $GITHUB_STEP_SUMMARY
-            echo "docker pull cloudpirates/${{ matrix.image }}:${{ steps.config.outputs.version }}" >> $GITHUB_STEP_SUMMARY
+            echo "docker pull cloudpirates/${{ matrix.image }}:${{ steps.config.outputs.version }}$TAG_SUFFIX" >> $GITHUB_STEP_SUMMARY
             echo "" >> $GITHUB_STEP_SUMMARY
           fi
 
-          echo "# From GHCR" >> $GITHUB_STEP_SUMMARY
-          REPO_OWNER=$(echo "${{ github.repository_owner }}" | tr '[:upper:]' '[:lower:]')
-          echo "docker pull ghcr.io/$REPO_OWNER/container-images/${{ matrix.image }}:${{ steps.config.outputs.version }}" >> $GITHUB_STEP_SUMMARY
+          if [ "${{ github.event.inputs.push_to_ghcr }}" = "true" ]; then
+            echo "# From GHCR" >> $GITHUB_STEP_SUMMARY
+            REPO_OWNER=$(echo "${{ github.repository_owner }}" | tr '[:upper:]' '[:lower:]')
+            echo "docker pull ghcr.io/$REPO_OWNER/container-images/${{ matrix.image }}:${{ steps.config.outputs.version }}$TAG_SUFFIX" >> $GITHUB_STEP_SUMMARY
+          fi
+
           echo "\`\`\`" >> $GITHUB_STEP_SUMMARY
