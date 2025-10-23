@@ -33,14 +33,14 @@ FROM registry.access.redhat.com/ubi9/ubi-micro:latest
 
 ARG RELEASE
 
-LABEL org.opencontainers.image.source="https://github.com/CloudPirates-io/container-images" \
-      org.opencontainers.image.description="MinIO High-Performance Object Storage - CloudPirates Build" \
+LABEL org.opencontainers.image.source="https://github.com/zOnlyKroks/container-images" \
+      org.opencontainers.image.description="MinIO High-Performance Object Storage - zOnlyKroks Build" \
       org.opencontainers.image.version="${RELEASE}" \
-      org.opencontainers.image.vendor="CloudPirates" \
+      org.opencontainers.image.vendor="zOnlyKroks" \
       org.opencontainers.image.licenses="AGPL-3.0" \
       name="MinIO" \
       vendor="MinIO Inc <dev@min.io>" \
-      maintainer="CloudPirates" \
+      maintainer="zOnlyKroks" \
       version="${RELEASE}" \
       release="${RELEASE}" \
       summary="MinIO is a High Performance Object Storage, API compatible with Amazon S3 cloud storage service."

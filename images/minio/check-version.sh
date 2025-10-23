@@ -1,6 +1,19 @@
 #!/bin/bash
 set -e
 
+# Get the directory where this script is located
+SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+cd "$SCRIPT_DIR"
+
+# Detect OS for sed compatibility
+if [[ "$OSTYPE" == "darwin"* ]]; then
+  SED_INPLACE="sed -i.bak"
+  SED_CLEANUP="rm -f"
+else
+  SED_INPLACE="sed -i"
+  SED_CLEANUP="true"
+fi
+
 # Get current version from Dockerfile
 CURRENT_VERSION=$(grep "ARG RELEASE=" Dockerfile | head -1 | cut -d'=' -f2)
 
@@ -14,7 +27,7 @@ echo "Latest version: $LATEST_VERSION"
 # Compare versions (lexicographically since they're date-based)
 if [ "$CURRENT_VERSION" = "$LATEST_VERSION" ]; then
   echo "Already up to date!"
-  echo "update_available=false" >> "$GITHUB_OUTPUT"
+  [ -n "$GITHUB_OUTPUT" ] && echo "update_available=false" >> "$GITHUB_OUTPUT"
   exit 0
 fi
 
@@ -23,13 +36,16 @@ if [[ "$LATEST_VERSION" > "$CURRENT_VERSION" ]]; then
   echo "Update available: $CURRENT_VERSION -> $LATEST_VERSION"
 
   # Update Dockerfile
-  sed -i "s|ARG RELEASE=$CURRENT_VERSION|ARG RELEASE=$LATEST_VERSION|g" Dockerfile
+  $SED_INPLACE "s|ARG RELEASE=$CURRENT_VERSION|ARG RELEASE=$LATEST_VERSION|g" Dockerfile
+  $SED_CLEANUP Dockerfile.bak 2>/dev/null || true
 
   # Update config.yaml - version field
-  sed -i "s|version: \"$CURRENT_VERSION\"|version: \"$LATEST_VERSION\"|g" config.yaml
+  $SED_INPLACE "s|version: \"$CURRENT_VERSION\"|version: \"$LATEST_VERSION\"|g" config.yaml
+  $SED_CLEANUP config.yaml.bak 2>/dev/null || true
 
   # Update config.yaml - build_args RELEASE field
-  sed -i "s|RELEASE: \"$CURRENT_VERSION\"|RELEASE: \"$LATEST_VERSION\"|g" config.yaml
+  $SED_INPLACE "s|RELEASE: \"$CURRENT_VERSION\"|RELEASE: \"$LATEST_VERSION\"|g" config.yaml
+  $SED_CLEANUP config.yaml.bak 2>/dev/null || true
 
   # Get release notes
   RELEASE_NOTES=$(curl -s https://api.github.com/repos/minio/minio/releases/latest | jq -r '.body' | head -20)
