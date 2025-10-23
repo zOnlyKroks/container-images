@@ -256,11 +256,13 @@ jobs:
           echo "version=$VERSION" >> $GITHUB_OUTPUT
           echo "description=$DESCRIPTION" >> $GITHUB_OUTPUT
           echo "platforms=$PLATFORMS" >> $GITHUB_OUTPUT
+          echo "cache_scope_suffix=$CACHE_SCOPE_SUFFIX" >> $GITHUB_OUTPUT
           echo "tags=$TAGS" >> $GITHUB_OUTPUT
           echo "build_args=$BUILD_ARGS" >> $GITHUB_OUTPUT
 
           echo "Building $IMAGE_NAME:$VERSION from $BASE_IMAGE"
           echo "Tags: $TAGS"
+          echo "Cache scope: $IMAGE_NAME-$CACHE_SCOPE_SUFFIX"
 
       - name: Apply patches
         id: patches
@@ -350,9 +352,9 @@ jobs:
           tags: ${{ steps.config.outputs.tags }}
           # Enhanced caching strategy with per-image cache keys
           cache-from: |
+            type=gha,scope=${{ matrix.image }}-${{ steps.config.outputs.cache_scope_suffix }}
             type=gha,scope=${{ matrix.image }}
-            type=gha,scope=${{ matrix.image }}-${{ steps.config.outputs.platforms }}
-          cache-to: type=gha,mode=max,scope=${{ matrix.image }}
+          cache-to: type=gha,mode=max,scope=${{ matrix.image }}-${{ steps.config.outputs.cache_scope_suffix }}
           labels: |
             org.opencontainers.image.source=${{ github.event.repository.html_url }}
             org.opencontainers.image.created=${{ github.event.head_commit.timestamp }}
