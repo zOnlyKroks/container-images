@@ -240,10 +240,10 @@ jobs:
             fi
           fi
 
-          # Error if no registry is selected
+          # If no registry is selected, use a local tag for build-only
           if [ -z "$TAGS" ]; then
-            echo "ERROR: No registry selected or credentials not available"
-            exit 1
+            echo "⚠️ No registry selected - building without push"
+            TAGS="local/$IMAGE_NAME:$VERSION$TAG_SUFFIX"
           fi
 
           echo "base_image=$BASE_IMAGE" >> $GITHUB_OUTPUT
