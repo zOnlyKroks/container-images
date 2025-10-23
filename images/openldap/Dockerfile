@@ -9,16 +9,33 @@ ARG OPENLDAP_VERSION
 WORKDIR /tmp/build
 
 # Install build dependencies
-RUN dnf install -y \
+RUN dnf install -y --disableplugin=subscription-manager \
     gcc \
+    gcc-c++ \
     make \
+    m4 \
+    groff-base \
     openssl-devel \
     cyrus-sasl-devel \
     libevent-devel \
+    unixODBC-devel \
     tar \
     gzip \
     wget \
     && dnf clean all
+
+# Build and install libtool (for libltdl which is needed for modules)
+RUN wget -q https://ftp.gnu.org/gnu/libtool/libtool-2.4.7.tar.gz && \
+    tar -xzf libtool-2.4.7.tar.gz && \
+    cd libtool-2.4.7 && \
+    ./configure --prefix=/usr/local && \
+    make -j$(nproc) && \
+    make install && \
+    cd .. && \
+    rm -rf libtool-2.4.7 libtool-2.4.7.tar.gz
+
+# Update library path
+ENV LD_LIBRARY_PATH=/usr/local/lib:$LD_LIBRARY_PATH
 
 # Download OpenLDAP source
 RUN wget -q "https://www.openldap.org/software/download/OpenLDAP/openldap-release/openldap-${OPENLDAP_VERSION}.tgz" && \
@@ -27,15 +44,19 @@ RUN wget -q "https://www.openldap.org/software/download/OpenLDAP/openldap-releas
 
 WORKDIR /tmp/build/openldap-${OPENLDAP_VERSION}
 
-# Configure and compile OpenLDAP
+# Configure and compile OpenLDAP with all commonly-used modules enabled
 RUN ./configure \
     --prefix=/usr/local/openldap \
     --enable-slapd \
     --enable-modules \
     --enable-backends=mod \
+    --disable-wt \
+    --disable-perl \
     --enable-overlays=mod \
     --with-cyrus-sasl \
     --with-tls=openssl \
+    CPPFLAGS="-I/usr/local/include" \
+    LDFLAGS="-L/usr/local/lib" \
     && make -j$(nproc) \
     && make install
 
@@ -61,6 +82,8 @@ COPY --from=build /usr/lib64/libsasl2.so* /usr/lib64/
 COPY --from=build /usr/lib64/libssl.so* /usr/lib64/
 COPY --from=build /usr/lib64/libcrypto.so* /usr/lib64/
 COPY --from=build /usr/lib64/libevent* /usr/lib64/
+COPY --from=build /usr/lib64/libodbc.so* /usr/lib64/
+COPY --from=build /usr/local/lib/libltdl.so* /usr/lib64/
 
 # Copy compiled OpenLDAP
 COPY --from=build /usr/local/openldap /usr/local/openldap
