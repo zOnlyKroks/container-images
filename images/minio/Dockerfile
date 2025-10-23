@@ -15,12 +15,17 @@ WORKDIR /build
 RUN apk add -U --no-cache ca-certificates git make
 
 # Clone MinIO source at specific release tag and build
-RUN git clone --depth 1 --branch ${RELEASE} https://github.com/minio/minio.git && \
+# Use build cache mounts to significantly speed up compilation
+RUN --mount=type=cache,target=/go/pkg/mod \
+    --mount=type=cache,target=/root/.cache/go-build \
+    git clone --depth 1 --branch ${RELEASE} https://github.com/minio/minio.git && \
     cd minio && \
     go build -o /go/bin/minio -trimpath -tags kqueue -ldflags "-s -w" .
 
 # Build MinIO Client (mc) from source
-RUN git clone --depth 1 https://github.com/minio/mc.git && \
+RUN --mount=type=cache,target=/go/pkg/mod \
+    --mount=type=cache,target=/root/.cache/go-build \
+    git clone --depth 1 https://github.com/minio/mc.git && \
     cd mc && \
     go build -o /go/bin/mc -trimpath -ldflags "-s -w" .
 

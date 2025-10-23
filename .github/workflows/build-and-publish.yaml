@@ -111,6 +111,7 @@ jobs:
     needs: detect-changes
     if: needs.detect-changes.outputs.matrix != '' && fromJson(needs.detect-changes.outputs.matrix).include[0].image != 'none'
     runs-on: ubuntu-latest
+    timeout-minutes: 90  # Allow time for ARM64 compilation via QEMU
     permissions:
       contents: read
       packages: write
