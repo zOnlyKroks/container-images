@@ -1,7 +1,7 @@
 ARG RELEASE=RELEASE.2025-10-15T17-29-55Z
 
-# Build stage - download and verify binaries
-FROM golang:1.23-alpine AS build
+# Build stage - compile MinIO from source
+FROM golang:1.24-alpine AS build
 
 ARG TARGETARCH
 ARG RELEASE
@@ -12,20 +12,22 @@ ENV CGO_ENABLED=0
 WORKDIR /build
 
 # Install build tools
-RUN apk add -U --no-cache ca-certificates curl bash
+RUN apk add -U --no-cache ca-certificates git make
 
-# Download MinIO binary from official source
-RUN curl -s -q https://dl.min.io/server/minio/release/linux-${TARGETARCH}/archive/minio.${RELEASE} -o /go/bin/minio && \
-    chmod +x /go/bin/minio
+# Clone MinIO source at specific release tag and build
+RUN git clone --depth 1 --branch ${RELEASE} https://github.com/minio/minio.git && \
+    cd minio && \
+    go build -o /go/bin/minio -trimpath -tags kqueue -ldflags "-s -w" .
 
-# Download mc (MinIO Client) binary from official source
-RUN curl -s -q https://dl.min.io/client/mc/release/linux-${TARGETARCH}/mc -o /go/bin/mc && \
-    chmod +x /go/bin/mc
+# Build MinIO Client (mc) from source
+RUN git clone --depth 1 https://github.com/minio/mc.git && \
+    cd mc && \
+    go build -o /go/bin/mc -trimpath -ldflags "-s -w" .
 
-# Final verification that binaries exist and are executable
+# Verify binaries were built successfully
 RUN test -x /go/bin/minio && \
     test -x /go/bin/mc && \
-    echo "Binary verification complete:" && \
+    echo "Binary compilation complete:" && \
     ls -lh /go/bin/minio /go/bin/mc
 
 # Runtime stage
@@ -34,7 +36,7 @@ FROM registry.access.redhat.com/ubi9/ubi-micro:latest
 ARG RELEASE
 
 LABEL org.opencontainers.image.source="https://github.com/zOnlyKroks/container-images" \
-      org.opencontainers.image.description="MinIO High-Performance Object Storage - zOnlyKroks Build" \
+      org.opencontainers.image.description="MinIO High-Performance Object Storage (Built from Source)" \
       org.opencontainers.image.version="${RELEASE}" \
       org.opencontainers.image.vendor="zOnlyKroks" \
       org.opencontainers.image.licenses="AGPL-3.0" \
