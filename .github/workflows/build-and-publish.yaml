@@ -220,9 +220,10 @@ jobs:
 
           # Add Docker Hub tags if enabled and credentials are available
           if [ "${{ github.event.inputs.push_to_dockerhub }}" = "true" ] && [ "${{ steps.check-creds.outputs.dockerhub }}" = "true" ]; then
-            TAGS="cloudpirates/$IMAGE_NAME:$VERSION$TAG_SUFFIX"
+            DOCKERHUB_USER="${{ secrets.DOCKERHUB_USERNAME }}"
+            TAGS="${DOCKERHUB_USER}/$IMAGE_NAME:$VERSION$TAG_SUFFIX"
             if [ -z "$TAG_SUFFIX" ]; then
-              TAGS="$TAGS,cloudpirates/$IMAGE_NAME:latest"
+              TAGS="$TAGS,${DOCKERHUB_USER}/$IMAGE_NAME:latest"
             fi
           fi
 
@@ -444,9 +445,10 @@ jobs:
 
           # Sign Docker Hub image if push is enabled
           if [ "${{ github.event.inputs.push_to_dockerhub }}" = "true" ] && [ "${{ steps.check-creds.outputs.dockerhub }}" = "true" ]; then
+            DOCKERHUB_USER="${{ secrets.DOCKERHUB_USERNAME }}"
             echo "Signing Docker Hub image..."
             cosign sign -y --key env://COSIGN_KEY \
-              cloudpirates/$IMAGE_NAME:$VERSION$TAG_SUFFIX
+              ${DOCKERHUB_USER}/$IMAGE_NAME:$VERSION$TAG_SUFFIX
           fi
 
           # Sign GHCR image if push is enabled
@@ -529,8 +531,9 @@ jobs:
           echo "\`\`\`bash" >> $GITHUB_STEP_SUMMARY
 
           if [ "${{ github.event.inputs.push_to_dockerhub }}" = "true" ] && [ "${{ steps.check-creds.outputs.dockerhub }}" = "true" ]; then
+            DOCKERHUB_USER="${{ secrets.DOCKERHUB_USERNAME }}"
             echo "# From Docker Hub" >> $GITHUB_STEP_SUMMARY
-            echo "docker pull cloudpirates/${{ matrix.image }}:${{ steps.config.outputs.version }}$TAG_SUFFIX" >> $GITHUB_STEP_SUMMARY
+            echo "docker pull ${DOCKERHUB_USER}/${{ matrix.image }}:${{ steps.config.outputs.version }}$TAG_SUFFIX" >> $GITHUB_STEP_SUMMARY
             echo "" >> $GITHUB_STEP_SUMMARY
           fi
 
