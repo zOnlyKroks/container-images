@@ -2,6 +2,8 @@
 
 Multi-architecture OpenLDAP container built from official source on Red Hat UBI9.
 
+**GitHub Repository**: https://github.com/zOnlyKroks/container-images
+
 ## Quick Start
 
 ```bash

@@ -2,6 +2,8 @@
 
 Multi-architecture MinIO container built from official source, compatible with Amazon S3 API.
 
+**GitHub Repository**: https://github.com/zOnlyKroks/container-images
+
 ## Quick Start
 
 ```bash
