@@ -47,11 +47,13 @@ LABEL org.opencontainers.image.source="https://github.com/CloudPirates-io/contai
 
 # Environment variables for MinIO
 # hadolint ignore=DL3003,DL4006,SC2086
-# These ENV vars specify file paths, not actual secrets
-# Set default credentials (should be overridden at runtime)
-ENV MINIO_ROOT_USER=admin \
-    MINIO_ROOT_PASSWORD=ChangeThisSecurePassword123 \
-    MINIO_ACCESS_KEY_FILE=access_key \
+# IMPORTANT: MINIO_ROOT_USER and MINIO_ROOT_PASSWORD must be set at runtime
+# MinIO will not start without credentials. Set them via:
+#   docker run -e MINIO_ROOT_USER=myadmin -e MINIO_ROOT_PASSWORD=mysecretpassword ...
+# Or use Docker secrets/Kubernetes secrets in production
+
+# File-based credential paths (for Docker/Kubernetes secrets)
+ENV MINIO_ACCESS_KEY_FILE=access_key \
     MINIO_SECRET_KEY_FILE=secret_key \
     MINIO_ROOT_USER_FILE=access_key \
     MINIO_ROOT_PASSWORD_FILE=secret_key \
