@@ -1,7 +1,7 @@
 ARG RELEASE=RELEASE.2025-10-15T17-29-55Z
 
 # Build stage - download and verify binaries
-FROM golang:1.25-alpine AS build
+FROM golang:1.23-alpine AS build
 
 ARG TARGETARCH
 ARG RELEASE
@@ -11,20 +11,21 @@ ENV CGO_ENABLED=0
 
 WORKDIR /build
 
-# Install verification tools
+# Install build tools
 RUN apk add -U --no-cache ca-certificates curl bash
 
-# Download MinIO binary
+# Download MinIO binary from official source
 RUN curl -s -q https://dl.min.io/server/minio/release/linux-${TARGETARCH}/archive/minio.${RELEASE} -o /go/bin/minio && \
     chmod +x /go/bin/minio
 
-# Download mc (MinIO Client) binary
+# Download mc (MinIO Client) binary from official source
 RUN curl -s -q https://dl.min.io/client/mc/release/linux-${TARGETARCH}/mc -o /go/bin/mc && \
     chmod +x /go/bin/mc
 
-# Verify binaries were downloaded successfully
-RUN test -f /go/bin/minio && \
-    test -f /go/bin/mc && \
+# Final verification that binaries exist and are executable
+RUN test -x /go/bin/minio && \
+    test -x /go/bin/mc && \
+    echo "Binary verification complete:" && \
     ls -lh /go/bin/minio /go/bin/mc
 
 # Runtime stage

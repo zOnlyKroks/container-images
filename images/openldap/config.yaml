@@ -1,9 +1,0 @@
-base_image: "alpine:3.21"
-version: "2.6.10"
-description: "OpenLDAP - Open Source LDAP Directory Server"
-
-# Default platforms (can be overridden with --platform flag)
-platforms: "linux/amd64,linux/arm64"
-
-build_args:
-  OPENLDAP_VERSION: "2.6.10"
