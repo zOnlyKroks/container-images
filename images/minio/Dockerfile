@@ -35,13 +35,17 @@ RUN test -x /go/bin/minio && \
     echo "Binary compilation complete:" && \
     ls -lh /go/bin/minio /go/bin/mc
 
+# Create user in build stage for later copying
+RUN echo "minio:x:1000:1000:MinIO User:/home/minio:/bin/sh" >> /tmp/passwd && \
+    echo "minio:x:1000:" >> /tmp/group
+
 # Runtime stage
 FROM registry.access.redhat.com/ubi9/ubi-micro:latest
 
 ARG RELEASE
 
 LABEL org.opencontainers.image.source="https://github.com/zOnlyKroks/container-images" \
-      org.opencontainers.image.description="MinIO High-Performance Object Storage (Built from Source)" \
+      org.opencontainers.image.description="MinIO High-Performance Object Storage (Security-First, Built from Source)" \
       org.opencontainers.image.version="${RELEASE}" \
       org.opencontainers.image.vendor="zOnlyKroks" \
       org.opencontainers.image.licenses="AGPL-3.0" \
@@ -74,17 +78,25 @@ ENV MINIO_ACCESS_KEY_FILE=access_key \
 # Copy CA certificates
 COPY --from=build /etc/ssl/certs/ca-certificates.crt /etc/ssl/certs/
 
-# Copy verified binaries (explicit names to avoid wildcards)
+# Copy user configuration from build stage
+COPY --from=build /tmp/passwd /tmp/group /tmp/
+
+# Copy verified binaries
 COPY --from=build /go/bin/minio /usr/bin/minio
 COPY --from=build /go/bin/mc /usr/bin/mc
 
-# Ensure binaries are executable
-RUN chmod +x /usr/bin/minio /usr/bin/mc
+# Copy entrypoint script
+COPY entrypoint.sh /usr/bin/docker-entrypoint.sh
 
-# Create entrypoint script
-RUN echo '#!/bin/sh' > /usr/bin/docker-entrypoint.sh && \
-    echo 'exec "$@"' >> /usr/bin/docker-entrypoint.sh && \
-    chmod +x /usr/bin/docker-entrypoint.sh
+# Setup user and permissions
+RUN cat /tmp/passwd >> /etc/passwd && \
+    cat /tmp/group >> /etc/group && \
+    rm /tmp/passwd /tmp/group && \
+    chmod +x /usr/bin/minio /usr/bin/mc /usr/bin/docker-entrypoint.sh && \
+    mkdir -p /data /tmp/.mc /home/minio/.minio/certs && \
+    chown -R 1000:1000 /data /tmp/.mc /home/minio
+
+USER 1000:1000
 
 EXPOSE 9000 9001
 
@@ -94,6 +106,9 @@ VOLUME ["/data"]
 # Check every 30s, timeout 10s, start checking after 5s, 3 retries before unhealthy
 HEALTHCHECK --interval=30s --timeout=10s --start-period=5s --retries=3 \
     CMD ["/usr/bin/mc", "ready", "local", "--quiet"] || exit 1
+
+# Set working directory to user home
+WORKDIR /home/minio
 
 ENTRYPOINT ["/usr/bin/docker-entrypoint.sh"]
 CMD ["minio", "server", "/data", "--console-address", ":9001"]

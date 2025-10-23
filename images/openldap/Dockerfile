@@ -60,13 +60,16 @@ RUN ./configure \
     && make -j$(nproc) \
     && make install
 
+RUN echo "ldap:x:1000:1000:LDAP User:/home/ldap:/bin/sh" >> /tmp/passwd && \
+    echo "ldap:x:1000:" >> /tmp/group
+
 # Runtime stage
 FROM registry.access.redhat.com/ubi9/ubi-micro:latest
 
 ARG OPENLDAP_VERSION
 
 LABEL org.opencontainers.image.source="https://github.com/zOnlyKroks/container-images" \
-      org.opencontainers.image.description="OpenLDAP - Open Source LDAP Directory Server" \
+      org.opencontainers.image.description="OpenLDAP - Open Source LDAP Directory Server (Security-First)" \
       org.opencontainers.image.version="${OPENLDAP_VERSION}" \
       org.opencontainers.image.vendor="zOnlyKroks" \
       org.opencontainers.image.licenses="OpenLDAP Public License" \
@@ -77,7 +80,6 @@ LABEL org.opencontainers.image.source="https://github.com/zOnlyKroks/container-i
       release="${OPENLDAP_VERSION}" \
       summary="OpenLDAP is an open source LDAP directory server"
 
-# Install runtime dependencies
 COPY --from=build /usr/lib64/libsasl2.so* /usr/lib64/
 COPY --from=build /usr/lib64/libssl.so* /usr/lib64/
 COPY --from=build /usr/lib64/libcrypto.so* /usr/lib64/
@@ -85,24 +87,32 @@ COPY --from=build /usr/lib64/libevent* /usr/lib64/
 COPY --from=build /usr/lib64/libodbc.so* /usr/lib64/
 COPY --from=build /usr/local/lib/libltdl.so* /usr/lib64/
 
-# Copy compiled OpenLDAP
 COPY --from=build /usr/local/openldap /usr/local/openldap
+COPY --from=build /tmp/passwd /tmp/group /tmp/
 
-# Add to PATH
-ENV PATH="/usr/local/openldap/bin:/usr/local/openldap/sbin:${PATH}"
+ENV PATH="/usr/local/openldap/bin:/usr/local/openldap/sbin:${PATH}" \
+    LDAP_DATA_DIR="/var/lib/ldap" \
+    LDAP_CONFIG_DIR="/usr/local/openldap/etc/openldap/slapd.d"
 
-# Create simple entrypoint
-RUN echo '#!/bin/sh' > /usr/bin/docker-entrypoint.sh && \
-    echo 'exec "$@"' >> /usr/bin/docker-entrypoint.sh && \
-    chmod +x /usr/bin/docker-entrypoint.sh
+COPY entrypoint.sh /usr/bin/docker-entrypoint.sh
+
+RUN cat /tmp/passwd >> /etc/passwd && \
+    cat /tmp/group >> /etc/group && \
+    rm /tmp/passwd /tmp/group && \
+    chmod +x /usr/bin/docker-entrypoint.sh && \
+    mkdir -p /var/lib/ldap /usr/local/openldap/etc/openldap/slapd.d /var/run/openldap && \
+    chown -R 1000:1000 /var/lib/ldap /usr/local/openldap/etc/openldap/slapd.d /var/run/openldap
+
+USER 1000:1000
 
 EXPOSE 389 636
 
 VOLUME ["/var/lib/ldap", "/usr/local/openldap/etc/openldap/slapd.d"]
 
-# Health check - verify slapd binary exists and is executable
 HEALTHCHECK --interval=30s --timeout=10s --start-period=30s --retries=3 \
     CMD ["/usr/local/openldap/libexec/slapd", "-VV"] || exit 1
+
+WORKDIR /home/ldap
 
 ENTRYPOINT ["/usr/bin/docker-entrypoint.sh"]
 CMD ["slapd", "-d", "256", "-h", "ldap:/// ldaps:///"]
