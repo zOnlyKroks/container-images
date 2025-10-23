@@ -728,9 +728,28 @@ jobs:
           fi
 
           if [ "${{ github.event.inputs.push_to_dockerhub }}" = "true" ] && [ "${{ steps.check-creds.outputs.dockerhub }}" = "true" ]; then
-            echo "ℹ️  Note: Docker Hub platform-specific tags (-amd64/-arm64) cannot be automatically deleted"
-            echo "ℹ️  These are intermediate tags. Users should pull the multi-arch tags instead"
-            echo "ℹ️  You can manually delete them from Docker Hub if desired"
+            echo "Deleting Docker Hub platform-specific tags..."
+            DOCKERHUB_USER="${{ secrets.DOCKERHUB_USERNAME }}"
+
+            # Get Docker Hub token
+            DOCKERHUB_TOKEN=$(curl -s -X POST \
+              -H "Content-Type: application/json" \
+              -d "{\"username\":\"$DOCKERHUB_USER\",\"password\":\"${{ secrets.DOCKERHUB_TOKEN }}\"}" \
+              https://hub.docker.com/v2/users/login/ | jq -r .token)
+
+            if [ -n "$DOCKERHUB_TOKEN" ] && [ "$DOCKERHUB_TOKEN" != "null" ]; then
+              for ARCH in amd64 arm64; do
+                TAG="$VERSION$TAG_SUFFIX-$ARCH"
+                echo "Attempting to delete Docker Hub tag: $TAG"
+
+                curl -X DELETE \
+                  -H "Authorization: JWT $DOCKERHUB_TOKEN" \
+                  "https://hub.docker.com/v2/repositories/$DOCKERHUB_USER/$IMAGE_NAME/tags/$TAG/" \
+                  && echo "✅ Deleted $TAG from Docker Hub" || echo "⚠️ Failed to delete $TAG from Docker Hub"
+              done
+            else
+              echo "⚠️ Failed to get Docker Hub token for cleanup"
+            fi
           fi
 
       - name: Wait for image to be available
