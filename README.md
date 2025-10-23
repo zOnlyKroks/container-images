@@ -10,6 +10,10 @@ Container images built from official sources. Multi-platform builds (amd64/arm64
 - **Docker Hub:** `zonlykroks/minio`
 - **GHCR:** `ghcr.io/zonlykroks/container-images/minio`
 
+### OpenLDAP
+- **Docker Hub:** `zonlykroks/openldap`
+- **GHCR:** `ghcr.io/zonlykroks/container-images/openldap`
+
 ## Building
 
 Images are built via GitHub Actions workflow. Go to **Actions → Build and Publish Container Images → Run workflow**
