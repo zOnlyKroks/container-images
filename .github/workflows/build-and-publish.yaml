@@ -207,6 +207,9 @@ jobs:
             echo "Using config.yaml platforms: $PLATFORMS"
           fi
 
+          # Create cache scope suffix by sanitizing platform string (replace commas and slashes)
+          CACHE_SCOPE_SUFFIX=$(echo "$PLATFORMS" | tr ',/' '-')
+
           BUILD_ARGS=$(yq eval '.build_args // {}' "$CONFIG_FILE" -o json -I=0)
 
           # Get GitHub repo owner in lowercase
