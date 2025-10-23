@@ -330,8 +330,8 @@ jobs:
           context: images/${{ matrix.image }}
           file: images/${{ matrix.image }}/Dockerfile.generated
           platforms: ${{ steps.config.outputs.platform }}
-          # Push only if at least one registry is enabled
-          push: ${{ github.event.inputs.push_to_dockerhub == 'true' || github.event.inputs.push_to_ghcr == 'true' }}
+          # Always push platform-specific images (needed for manifest merge)
+          push: true
           tags: ${{ steps.config.outputs.tags }}
           # Platform-specific caching
           cache-from: type=gha,scope=${{ matrix.image }}-amd64
@@ -543,7 +543,8 @@ jobs:
           context: images/${{ matrix.image }}
           file: images/${{ matrix.image }}/Dockerfile.generated
           platforms: ${{ steps.config.outputs.platform }}
-          push: ${{ github.event.inputs.push_to_dockerhub == 'true' || github.event.inputs.push_to_ghcr == 'true' }}
+          # Always push platform-specific images (needed for manifest merge)
+          push: true
           tags: ${{ steps.config.outputs.tags }}
           cache-from: type=gha,scope=${{ matrix.image }}-arm64
           cache-to: type=gha,mode=max,scope=${{ matrix.image }}-arm64
@@ -687,6 +688,50 @@ jobs:
           fi
 
           echo "✅ Multi-arch manifest created successfully"
+
+      - name: Clean up platform-specific tags
+        run: |
+          set -euo pipefail
+
+          IMAGE_NAME="${{ matrix.image }}"
+          VERSION="${{ steps.config.outputs.version }}"
+          TAG_SUFFIX="${{ steps.config.outputs.tag_suffix }}"
+          REPO_OWNER="${{ steps.config.outputs.repo_owner }}"
+
+          echo "Cleaning up intermediate platform-specific tags..."
+
+          # Note: We can't easily delete tags from Docker Hub via CLI, but we can delete from GHCR
+          # For Docker Hub, users can manually delete the -amd64/-arm64 tags if desired
+          # The multi-arch manifests are what users should pull anyway
+
+          if [ "${{ github.event.inputs.push_to_ghcr }}" = "true" ]; then
+            # Delete platform-specific tags from GHCR using GitHub API
+            echo "Deleting GHCR platform-specific tags..."
+
+            for ARCH in amd64 arm64; do
+              TAG="$VERSION$TAG_SUFFIX-$ARCH"
+              echo "Attempting to delete ghcr.io/$REPO_OWNER/container-images/$IMAGE_NAME:$TAG"
+
+              # Get package version ID
+              PACKAGE_VERSION_ID=$(curl -s -H "Authorization: Bearer ${{ secrets.GITHUB_TOKEN }}" \
+                "https://api.github.com/users/$REPO_OWNER/packages/container/container-images%2F$IMAGE_NAME/versions" \
+                | jq -r ".[] | select(.metadata.container.tags[] | contains(\"$TAG\")) | .id" | head -n1)
+
+              if [ -n "$PACKAGE_VERSION_ID" ] && [ "$PACKAGE_VERSION_ID" != "null" ]; then
+                curl -X DELETE -H "Authorization: Bearer ${{ secrets.GITHUB_TOKEN }}" \
+                  "https://api.github.com/users/$REPO_OWNER/packages/container/container-images%2F$IMAGE_NAME/versions/$PACKAGE_VERSION_ID" \
+                  && echo "✅ Deleted $TAG" || echo "⚠️ Failed to delete $TAG"
+              else
+                echo "⚠️ Could not find version ID for $TAG"
+              fi
+            done
+          fi
+
+          if [ "${{ github.event.inputs.push_to_dockerhub }}" = "true" ] && [ "${{ steps.check-creds.outputs.dockerhub }}" = "true" ]; then
+            echo "ℹ️  Note: Docker Hub platform-specific tags (-amd64/-arm64) cannot be automatically deleted"
+            echo "ℹ️  These are intermediate tags. Users should pull the multi-arch tags instead"
+            echo "ℹ️  You can manually delete them from Docker Hub if desired"
+          fi
 
       - name: Wait for image to be available
         if: github.event.inputs.push_to_ghcr == 'true' && github.event.inputs.run_security_scan == 'true'
