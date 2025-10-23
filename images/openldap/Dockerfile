@@ -34,8 +34,8 @@ RUN wget -q https://ftp.gnu.org/gnu/libtool/libtool-2.4.7.tar.gz && \
     cd .. && \
     rm -rf libtool-2.4.7 libtool-2.4.7.tar.gz
 
-# Update library path
-ENV LD_LIBRARY_PATH=/usr/local/lib:$LD_LIBRARY_PATH
+# Update library path (append to existing LD_LIBRARY_PATH if set, otherwise just set it)
+ENV LD_LIBRARY_PATH=/usr/local/lib:${LD_LIBRARY_PATH:-}
 
 # Download OpenLDAP source
 RUN wget -q "https://www.openldap.org/software/download/OpenLDAP/openldap-release/openldap-${OPENLDAP_VERSION}.tgz" && \

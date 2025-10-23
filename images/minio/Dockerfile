@@ -60,6 +60,8 @@ LABEL org.opencontainers.image.source="https://github.com/zOnlyKroks/container-i
 # Or use Docker secrets/Kubernetes secrets in production
 
 # File-based credential paths (for Docker/Kubernetes secrets)
+# These variables contain FILE PATHS, not secrets themselves - they tell MinIO where to read secrets from
+# checkov:skip=CKV_DOCKER_3: These are file paths for secret mounting, not actual secrets
 ENV MINIO_ACCESS_KEY_FILE=access_key \
     MINIO_SECRET_KEY_FILE=secret_key \
     MINIO_ROOT_USER_FILE=access_key \
