@@ -21,9 +21,13 @@ get_image_digest() {
 
   # Use Docker Hub API or registry API to get the digest
   if [[ $image == *"registry.access.redhat.com"* ]]; then
-    # For Red Hat registry, we'll use skopeo or a direct registry query
-    # For now, we'll skip auto-updating Red Hat images as they require authentication
-    echo ""
+    # For Red Hat registry, query directly without authentication (public images)
+    local digest=$(curl -sL \
+      -H "Accept: application/vnd.docker.distribution.manifest.v2+json" \
+      "https://${image}/manifests/${tag}" \
+      -I 2>/dev/null | grep -i docker-content-digest | awk '{print $2}' | tr -d '\r')
+
+    echo "$digest"
   else
     # For Docker Hub images
     local repo=${image#docker.io/}
@@ -73,6 +77,9 @@ echo ""
 echo "Fetching latest golang:$GOLANG_TAG digest..."
 LATEST_GOLANG_DIGEST=$(get_image_digest "golang" "$GOLANG_TAG")
 
+echo "Fetching latest UBI9 ubi-micro:$UBI_TAG digest..."
+LATEST_UBI_DIGEST=$(get_image_digest "registry.access.redhat.com/ubi9/ubi-micro" "$UBI_TAG")
+
 UPDATE_NEEDED=false
 
 # Check if MinIO version update is needed
@@ -111,10 +118,20 @@ else
   echo "✓ Golang base image is up to date"
 fi
 
-# Note about UBI images
+# Check if UBI base image digest update is needed
 echo ""
-echo "Note: Red Hat UBI image digests should be updated manually or via Red Hat's registry"
-echo "      Current UBI digest: $CURRENT_UBI_DIGEST"
+if [ -n "$LATEST_UBI_DIGEST" ] && [ "$CURRENT_UBI_DIGEST" != "$LATEST_UBI_DIGEST" ]; then
+  echo "✓ UBI base image digest update available"
+  echo "  Old: $CURRENT_UBI_DIGEST"
+  echo "  New: $LATEST_UBI_DIGEST"
+  UPDATE_NEEDED=true
+
+  # Update Containerfile with new digest
+  $SED_INPLACE "s|ubi-micro:${UBI_TAG}@${CURRENT_UBI_DIGEST}|ubi-micro:${UBI_TAG}@${LATEST_UBI_DIGEST}|g" Containerfile
+  $SED_CLEANUP Containerfile.bak 2>/dev/null || true
+else
+  echo "✓ UBI base image is up to date"
+fi
 
 if [ "$UPDATE_NEEDED" = true ]; then
   # Get release notes

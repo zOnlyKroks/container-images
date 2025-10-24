@@ -28,9 +28,9 @@ print_warning() {
 # Function to display usage
 usage() {
     cat <<EOF
-Usage: $0 [OPTIONS] <image-name>
+Usage: $0 [OPTIONS]
 
-Test build container images locally
+Test build MinIO container image locally
 
 OPTIONS:
     -h, --help              Show this help message
@@ -43,19 +43,19 @@ OPTIONS:
 
 EXAMPLES:
     # Build for current platform
-    $0 minio
+    $0
 
     # Build for specific platform
-    $0 --platform linux/arm64 minio
+    $0 --platform linux/arm64
 
     # Build for multiple platforms
-    $0 --platform linux/amd64,linux/arm64 minio
+    $0 --platform linux/amd64,linux/arm64
 
     # Build without cache
-    $0 --no-cache minio
+    $0 --no-cache
 
     # Build and load to local docker
-    $0 --load minio
+    $0 --load
 
 EOF
     exit 0
@@ -72,7 +72,6 @@ TAG="test"
 NO_CACHE=""
 PUSH=""
 LOAD="--load"
-IMAGE_NAME=""
 
 # Parse arguments
 while [[ $# -gt 0 ]]; do
@@ -106,27 +105,22 @@ while [[ $# -gt 0 ]]; do
             usage
             ;;
         *)
-            IMAGE_NAME="$1"
-            shift
+            print_error "Unknown argument: $1"
+            usage
             ;;
     esac
 done
 
-# Validate image name
-if [ -z "$IMAGE_NAME" ]; then
-    print_error "Image name is required"
-    usage
-fi
+# Hardcode image name for single-repo structure
+IMAGE_NAME="minio"
 
-IMAGE_DIR="images/$IMAGE_NAME"
-
-if [ ! -d "$IMAGE_DIR" ]; then
-    print_error "Image directory not found: $IMAGE_DIR"
+if [ ! -f "config.yaml" ]; then
+    print_error "Configuration file not found: config.yaml"
     exit 1
 fi
 
-if [ ! -f "$IMAGE_DIR/config.yaml" ]; then
-    print_error "Configuration file not found: $IMAGE_DIR/config.yaml"
+if [ ! -f "Containerfile" ]; then
+    print_error "Containerfile not found"
     exit 1
 fi
 
@@ -155,14 +149,14 @@ if ! command -v yq &> /dev/null; then
     print_info "Attempting to parse config.yaml without yq..."
 
     # Fallback parsing
-    BASE_IMAGE=$(grep '^base_image:' "$IMAGE_DIR/config.yaml" | sed 's/base_image: *["'"'"']\?\([^"'"'"']*\)["'"'"']\?/\1/')
-    VERSION=$(grep '^version:' "$IMAGE_DIR/config.yaml" | sed 's/version: *["'"'"']\?\([^"'"'"']*\)["'"'"']\?/\1/')
+    BASE_IMAGE=$(grep '^base_image:' "config.yaml" | sed 's/base_image: *["'"'"']\?\([^"'"'"']*\)["'"'"']\?/\1/')
+    VERSION=$(grep '^version:' "config.yaml" | sed 's/version: *["'"'"']\?\([^"'"'"']*\)["'"'"']\?/\1/')
 else
     # Parse config.yaml
-    BASE_IMAGE=$(yq eval '.base_image' "$IMAGE_DIR/config.yaml")
-    VERSION=$(yq eval '.version' "$IMAGE_DIR/config.yaml")
-    DESCRIPTION=$(yq eval '.description // ""' "$IMAGE_DIR/config.yaml")
-    CONFIG_PLATFORMS=$(yq eval '.platforms // "linux/amd64,linux/arm64"' "$IMAGE_DIR/config.yaml")
+    BASE_IMAGE=$(yq eval '.base_image' "config.yaml")
+    VERSION=$(yq eval '.version' "config.yaml")
+    DESCRIPTION=$(yq eval '.description // ""' "config.yaml")
+    CONFIG_PLATFORMS=$(yq eval '.platforms // "linux/amd64,linux/arm64"' "config.yaml")
 
     print_info "Description: $DESCRIPTION"
     print_info "Configured platforms: $CONFIG_PLATFORMS"
@@ -183,36 +177,9 @@ if [[ "$PLATFORM" == *","* ]]; then
     print_warning "Multi-platform build: --load disabled (use --push to push to registry)"
 fi
 
-# Determine Dockerfile
-if [ -f "$IMAGE_DIR/Dockerfile" ]; then
-    DOCKERFILE="$IMAGE_DIR/Dockerfile"
-    print_info "Using custom Dockerfile: $DOCKERFILE"
-else
-    print_info "Generating Dockerfile..."
-    DOCKERFILE="$IMAGE_DIR/Dockerfile.generated"
-
-    cat > "$DOCKERFILE" <<EOF
-FROM $BASE_IMAGE
-
-LABEL org.opencontainers.image.source="https://github.com/CloudPirates-io/container-images"
-LABEL org.opencontainers.image.description="Test build"
-LABEL org.opencontainers.image.version="$VERSION"
-LABEL org.opencontainers.image.vendor="CloudPirates"
-LABEL org.opencontainers.image.licenses="Apache-2.0"
-
-EOF
-
-    # Add setup script if exists
-    if [ -f "$IMAGE_DIR/setup.sh" ]; then
-        print_info "Found setup.sh - adding to Dockerfile"
-        cat >> "$DOCKERFILE" <<EOF
-COPY setup.sh /tmp/setup.sh
-RUN chmod +x /tmp/setup.sh && /tmp/setup.sh && rm /tmp/setup.sh
-EOF
-    fi
-
-    print_success "Generated Dockerfile"
-fi
+# Use Containerfile in root directory
+CONTAINERFILE="Containerfile"
+print_info "Using Containerfile: $CONTAINERFILE"
 
 echo ""
 
@@ -223,12 +190,12 @@ print_info "Platform: $PLATFORM"
 
 BUILD_CMD="docker buildx build \
     --platform $PLATFORM \
-    --file $DOCKERFILE \
+    --file $CONTAINERFILE \
     --tag $IMAGE_TAG \
     $NO_CACHE \
     $LOAD \
     $PUSH \
-    $IMAGE_DIR"
+    ."
 
 print_info "Build command:"
 echo "$BUILD_CMD"
@@ -281,12 +248,6 @@ if eval "$BUILD_CMD"; then
 else
     print_error "Build failed!"
     exit 1
-fi
-
-# Cleanup generated Dockerfile
-if [ "$DOCKERFILE" = "$IMAGE_DIR/Dockerfile.generated" ]; then
-    rm -f "$DOCKERFILE"
-    print_info "Cleaned up generated Dockerfile"
 fi
 
 print_success "Test build complete!"

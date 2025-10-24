@@ -1,108 +1,17 @@
 name: Sync DockerHub README
 
 on:
-  workflow_dispatch:
-    inputs:
-      images:
-        description: 'Images to sync (comma-separated, e.g., "minio,openldap" or "all" for all images)'
-        required: true
-        type: string
-        default: 'all'
+  workflow_dispatch: # Allow manual triggering
   push:
     branches:
       - main
     paths:
-      - 'images/*/DOCKERHUB.md'
+      - 'DOCKERHUB.md'
       - '.github/workflows/sync-dockerhub-readme.yaml'
 
 jobs:
-  detect-images:
-    runs-on: ubuntu-latest
-    outputs:
-      matrix: ${{ steps.set-matrix.outputs.matrix }}
-    steps:
-      - name: Checkout
-        uses: actions/checkout@08c6903cd8c0fde910a37f88322edcfb5dd907a8 # v5.0.0
-        with:
-          fetch-depth: 2
-
-      - name: Detect images to sync
-        id: detect-images
-        run: |
-          set -euo pipefail
-
-          if [ "${{ github.event_name }}" = "workflow_dispatch" ]; then
-            # Manual trigger - use input
-            INPUT_IMAGES="${{ github.event.inputs.images }}"
-
-            if [ "$INPUT_IMAGES" = "all" ]; then
-              # Find all images with DOCKERHUB.md
-              IMAGES=""
-              for dir in images/*/; do
-                IMAGE_NAME=$(basename "$dir")
-                if [ -f "images/$IMAGE_NAME/DOCKERHUB.md" ]; then
-                  IMAGES="$IMAGES $IMAGE_NAME"
-                fi
-              done
-            else
-              # Specific images
-              IMAGES=$(echo "$INPUT_IMAGES" | tr ',' ' ')
-            fi
-          else
-            # Push trigger - detect changed DOCKERHUB.md files
-            CHANGED_FILES=$(git diff --name-only HEAD^ HEAD)
-            IMAGES=""
-
-            for file in $CHANGED_FILES; do
-              if [[ "$file" =~ ^images/([^/]+)/DOCKERHUB\.md$ ]]; then
-                IMAGE_NAME="${BASH_REMATCH[1]}"
-                if [ -f "images/$IMAGE_NAME/DOCKERHUB.md" ]; then
-                  IMAGES="$IMAGES $IMAGE_NAME"
-                fi
-              fi
-            done
-          fi
-
-          echo "images=$IMAGES" >> $GITHUB_OUTPUT
-          echo "Images to sync: $IMAGES"
-
-      - name: Set matrix
-        id: set-matrix
-        run: |
-          IMAGES="${{ steps.detect-images.outputs.images }}"
-
-          if [ -z "$IMAGES" ] || [ "$IMAGES" = " " ]; then
-            echo "matrix={\"include\":[{\"image\":\"none\"}]}" >> $GITHUB_OUTPUT
-            echo "No images to sync"
-          else
-            JSON_ARRAY="["
-            FOUND_VALID_IMAGE=false
-
-            for img in $IMAGES; do
-              img=$(echo "$img" | xargs)  # trim whitespace
-              if [ -n "$img" ] && [ -f "images/$img/DOCKERHUB.md" ]; then
-                JSON_ARRAY="$JSON_ARRAY{\"image\":\"$img\"},"
-                FOUND_VALID_IMAGE=true
-              fi
-            done
-
-            if [ "$FOUND_VALID_IMAGE" = "true" ]; then
-              JSON_ARRAY="${JSON_ARRAY%,}]"
-            else
-              JSON_ARRAY="[{\"image\":\"none\"}]"
-            fi
-
-            echo "matrix={\"include\":$JSON_ARRAY}" >> $GITHUB_OUTPUT
-            echo "Matrix: $JSON_ARRAY"
-          fi
-
   sync-readme:
-    needs: detect-images
-    if: needs.detect-images.outputs.matrix != '' && fromJson(needs.detect-images.outputs.matrix).include[0].image != 'none'
     runs-on: ubuntu-latest
-    strategy:
-      fail-fast: false
-      matrix: ${{ fromJson(needs.detect-images.outputs.matrix) }}
     steps:
       - name: Checkout
         uses: actions/checkout@08c6903cd8c0fde910a37f88322edcfb5dd907a8 # v5.0.0
@@ -128,16 +37,16 @@ jobs:
         with:
           username: ${{ secrets.DOCKERHUB_USERNAME }}
           password: ${{ secrets.DOCKERHUB_TOKEN }}
-          repository: ${{ secrets.DOCKERHUB_USERNAME }}/${{ matrix.image }}
-          readme-filepath: ./images/${{ matrix.image }}/DOCKERHUB.md
-          short-description: "Multi-platform ${{ matrix.image }} built from official source"
+          repository: ${{ secrets.DOCKERHUB_USERNAME }}/minio
+          readme-filepath: ./DOCKERHUB.md
+          short-description: "Multi-platform MinIO built from official source"
 
       - name: Generate summary
         run: |
           echo "## DockerHub README Synced" >> $GITHUB_STEP_SUMMARY
           echo "" >> $GITHUB_STEP_SUMMARY
-          echo "✅ Successfully synced README for **${{ matrix.image }}**" >> $GITHUB_STEP_SUMMARY
+          echo "✅ Successfully synced README for **minio**" >> $GITHUB_STEP_SUMMARY
           echo "" >> $GITHUB_STEP_SUMMARY
-          echo "**Repository**: https://hub.docker.com/r/${{ secrets.DOCKERHUB_USERNAME }}/${{ matrix.image }}" >> $GITHUB_STEP_SUMMARY
+          echo "**Repository**: https://hub.docker.com/r/${{ secrets.DOCKERHUB_USERNAME }}/minio" >> $GITHUB_STEP_SUMMARY
           echo "" >> $GITHUB_STEP_SUMMARY
-          echo "**Source File**: \`images/${{ matrix.image }}/DOCKERHUB.md\`" >> $GITHUB_STEP_SUMMARY
+          echo "**Source File**: \`DOCKERHUB.md\`" >> $GITHUB_STEP_SUMMARY
