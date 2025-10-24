@@ -1,7 +1,7 @@
 ARG RELEASE=RELEASE.2025-10-15T17-29-55Z
 
 # Build stage - compile MinIO from source
-FROM golang:1.24-alpine AS build
+FROM golang:1.24-alpine@sha256:ac60270c8394bda77031017f1adc2c2861f9300a12985055ec4d3e4725c18bb4 AS build
 
 ARG TARGETARCH
 ARG RELEASE
@@ -40,7 +40,7 @@ RUN echo "minio:x:1000:1000:MinIO User:/home/minio:/bin/sh" >> /tmp/passwd && \
     echo "minio:x:1000:" >> /tmp/group
 
 # Runtime stage
-FROM registry.access.redhat.com/ubi9/ubi-micro:latest
+FROM registry.access.redhat.com/ubi9/ubi-micro:latest@sha256:a14963edf4631d8a4b99bb8ec7206c804c4d1f3c1a6c9ca58d5059553a52f992
 
 ARG RELEASE
 
@@ -101,11 +101,6 @@ USER 1000:1000
 EXPOSE 9000 9001
 
 VOLUME ["/data"]
-
-# Health check - verify MinIO is responding
-# Check every 30s, timeout 10s, start checking after 5s, 3 retries before unhealthy
-HEALTHCHECK --interval=30s --timeout=10s --start-period=5s --retries=3 \
-    CMD ["/usr/bin/mc", "ready", "local", "--quiet"] || exit 1
 
 # Set working directory to user home
 WORKDIR /home/minio

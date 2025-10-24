@@ -10,31 +10,8 @@ permissions:
   pull-requests: write
 
 jobs:
-  discover-images:
-    runs-on: ubuntu-latest
-    outputs:
-      matrix: ${{ steps.set-matrix.outputs.matrix }}
-    steps:
-      - name: Checkout repository
-        uses: actions/checkout@v5
-
-      - name: Discover images with check-version.sh
-        id: set-matrix
-        run: |
-          # Find all directories under images/ that contain check-version.sh
-          images=$(find images -mindepth 2 -maxdepth 2 -name "check-version.sh" -exec dirname {} \; | xargs -I {} basename {} | jq -R -s -c 'split("\n")[:-1]')
-          echo "matrix=$images" >> $GITHUB_OUTPUT
-          echo "Found images: $images"
-
   check-updates:
-    needs: discover-images
     runs-on: ubuntu-latest
-    if: needs.discover-images.outputs.matrix != '[]'
-    strategy:
-      matrix:
-        image: ${{ fromJson(needs.discover-images.outputs.matrix) }}
-      fail-fast: false
-
     steps:
       - name: Checkout repository
         uses: actions/checkout@v5
@@ -43,13 +20,12 @@ jobs:
 
       - name: Check for updates
         id: check
-        working-directory: images/${{ matrix.image }}
         run: |
           if [ -f check-version.sh ]; then
             chmod +x check-version.sh
             ./check-version.sh
           else
-            echo "No check-version.sh found for ${{ matrix.image }}"
+            echo "No check-version.sh found"
             exit 1
           fi
 
@@ -58,10 +34,10 @@ jobs:
         uses: peter-evans/create-pull-request@v7
         with:
           token: ${{ secrets.GITHUB_TOKEN }}
-          commit-message: "chore(images/${{ matrix.image }}): update to ${{ steps.check.outputs.new_version }}"
-          title: "chore(images/${{ matrix.image }}): update to ${{ steps.check.outputs.new_version }}"
+          commit-message: "chore: update to ${{ steps.check.outputs.new_version }}"
+          title: "chore: update to ${{ steps.check.outputs.new_version }}"
           body: |
-            ## Update ${{ matrix.image }} image
+            ## Update MinIO image
 
             **Current version:** `${{ steps.check.outputs.current_version }}`
             **New version:** `${{ steps.check.outputs.new_version }}`
@@ -70,8 +46,8 @@ jobs:
 
             ### Release Notes
             ${{ steps.check.outputs.release_notes }}
-          branch: update/${{ matrix.image }}-${{ steps.check.outputs.new_version }}
+          branch: update/minio-${{ steps.check.outputs.new_version }}
           labels: |
             dependencies
-            ${{ matrix.image }}
+            minio
           delete-branch: true

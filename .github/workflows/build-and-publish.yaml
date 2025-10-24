@@ -1,13 +1,8 @@
-name: Build and Publish Container Images
+name: Build and Publish Container Image
 
 on:
   workflow_dispatch:
     inputs:
-      images:
-        description: 'Images to build (comma-separated, e.g., "etcd,openldap" or "all" for all images)'
-        required: true
-        type: string
-        default: 'all'
       push_to_dockerhub:
         description: 'Push to Docker Hub'
         required: false
